@@ -121,6 +121,7 @@ await step("控えに直しと付箋と覚え書きが並ぶ", async () => {
   must(t.includes("三章の呼称ゆれ"), "覚え書きが載っていない");
   must(t.includes("付箋"), "付箋が載っていない");
 });
+
 await step("付箋だけに絞れる", async () => {
   await p.locator('#n-filter button[data-f="fusen"]').click();
   const items = await p.locator(".noteitem").count();
@@ -133,6 +134,60 @@ await step("控えから元の区切りへ戻れる", async () => {
   must(await p.locator(".ln.fs").count() === 1, "付箋が残っていない");
   await p.click("#r-back");
   await p.click("#btn-notes");
+  await p.locator('#n-filter button[data-f="all"]').click();
+  await p.click("#n-back");
+});
+await step("相談票を書き出せる", async () => {
+  await p.click("#btn-talk");
+  must(await vis("talk"), "相談の画面が開かない");
+  must((await p.textContent("#t-lead")).includes("1件"), "付箋の数が出ない");
+  const dl = p.waitForEvent("download");
+  await p.click("#t-save");
+  const d = await dl;
+  const st = await d.createReadStream();
+  let body = ""; for await (const c of st) body += c;
+  must(body.includes("[F1]"), "番号がない");
+  must(body.includes("▼ 窓の外は白く煙って"), "相談する行がない");
+  must(body.includes("前：　雨が降りつづいていた。"), "前の行が直したあとの本文になっていない");
+  must(body.includes("案："), "返事の形が書かれていない");
+});
+await step("Claudeの返事を貼ると案が付く", async () => {
+  await p.fill("#t-in", [
+    "三件みていきます。",
+    "",
+    "[F1]",
+    "見立て：情景が長く、視点が動きすぎています。",
+    "案：窓の外は白く煙っていた。",
+    "案：窓の外は、白く煙っている。",
+    "",
+    "他にもあれば言ってください。"
+  ].join("\n"));
+  await p.click("#t-import");
+  must(await vis("work"), "作品画面に戻らない");
+});
+await step("案が届いた行に印が出る", async () => {
+  await p.click("#btn-go");
+  must(await p.locator(".adv-msg").count() === 1, "案の印が出ない");
+  must((await p.textContent(".adv-msg")).includes("2件"), "案の数が出ない: " + (await p.textContent(".adv-msg")));
+});
+await step("案を押すと直しの欄に入る", async () => {
+  await p.click(".adv-msg");
+  must(await p.locator("#veil").isVisible(), "シートが開かない");
+  const cands = await p.locator(".cand").count();
+  must(cands === 2, "押せる候補が" + cands + "件");
+  await p.locator(".cand").first().click();
+  const v = await p.inputValue("#sh-t");
+  must(v === "窓の外は白く煙っていた。", "欄に入らない: " + v);
+  await p.click("#sh-save");
+  const t = await p.locator(".ln-t").nth(2).textContent();
+  must(t === "窓の外は白く煙っていた。", "案が本文に入らない: " + t);
+  await p.click("#r-back");
+});
+await step("控えの付箋に案あり印が付く", async () => {
+  await p.click("#btn-notes");
+  await p.locator('#n-filter button[data-f="fusen"]').click();
+  const t = await p.textContent(".noteitem em");
+  must(t.includes("案あり"), "案あり印がない: " + t);
   await p.locator('#n-filter button[data-f="all"]').click();
   await p.click("#n-back");
 });

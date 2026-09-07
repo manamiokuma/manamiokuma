@@ -149,6 +149,73 @@ run("通しの種類で絞られる", () => {
   truthy(typo.indexOf("long") < 0, "誤字の通しに文体の鉛筆が混じった");
 });
 
+console.log("\nClaudeへの相談");
+const 相談本文 = [
+  "　雨が降っていた。窓の外は白く煙っている。",
+  "　その事について、彼は何も言わなかった。",
+  "　彼は窓辺に立った。手紙の端をなぞった。"
+].join("\n");
+ev(`__t = {v:2, id:"x", title:"人形の部屋", blocks: cutBlocks(${JSON.stringify(相談本文)}, 2200), pass:1, kind:"typo", log:[], history:[]}`);
+ev(`migrate(__t); cur = __t; curId = "x"; index = []; yure = null`);
+ev(`cur.blocks[0].fusen = [3]; cur.blocks[0].note = "ここの語尾が重い"`);   /* 二段落目の一文 */
+const 票 = ev("talkText()");
+
+run("相談票に番号と印が入る", () => {
+  truthy(票.indexOf("[F1]") >= 0, "番号がない");
+  truthy(票.indexOf("▼ 　その事について、彼は何も言わなかった。") >= 0, "相談する行がない");
+  truthy(票.indexOf("1区切り目 4行目") >= 0, "場所が書かれていない");
+});
+run("前後の文が文脈として付く", () => {
+  truthy(票.indexOf("前：　雨が降っていた。") >= 0, "前の文がない");
+  truthy(票.indexOf("後：　彼は窓辺に立った。") >= 0, "後の文がない");
+});
+run("覚え書きと、返事の形の指定が入る", () => {
+  truthy(票.indexOf("この区切りの覚え書き：ここの語尾が重い") >= 0, "覚え書きが渡らない");
+  truthy(票.indexOf("案：") >= 0 && 票.indexOf("見立て：") >= 0, "返事の形が書かれていない");
+});
+run("返事を貼ると番号どおりに案が付く", () => {
+  const 返事 = [
+    "承知しました。三件みていきます。",
+    "",
+    "[F1]",
+    "見立て：「その事について」が説明的で、直前の情景から視点が離れています。",
+    "案：　彼は何も言わなかった。",
+    "案：　そのことに、彼は何も言わなかった。",
+    "",
+    "他に気になる点があれば言ってください。"
+  ].join("\n");
+  const r = ev(`importAdvice(${JSON.stringify(返事)})`);
+  eq(r.n, 1, "取り込めた件数");
+  const a = ev("cur.blocks[0].advice[3]");
+  truthy(a && a.indexOf("見立て：") >= 0, "案が付いていない");
+  const cands = ev("advCands(cur.blocks[0].advice[3])");
+  eq(cands.length, 2, "押せる候補の数");
+  eq(cands[0], "　彼は何も言わなかった。", "行頭の字下げが落ちている");
+});
+run("番号が見つからない返事は取り込まない", () => {
+  eq(ev(`importAdvice("ここはこう直すとよいと思います。").n`), 0, "何でも取り込んでしまう");
+});
+const 短い返事 = 印 => 印 + "\n案：　彼は黙っていた。";
+run("全角の［Ｆ１］でも読める", () => {
+  ev(`cur.blocks[0].advice = {}`);
+  eq(ev(`importAdvice(${JSON.stringify(短い返事("［Ｆ１］"))}).n`), 1, "全角が読めない");
+});
+run("付箋を増やしても、書き出した時の番号のまま配られる", () => {
+  ev(`cur.blocks[0].advice = {}; cur.blocks[0].fusen = [0, 3]`);   /* 書き出しのあとに一つ増やした */
+  const r = ev(`importAdvice(${JSON.stringify(短い返事("[F1]"))})`);
+  eq(r.n, 1, "取り込めた件数");
+  truthy(ev("cur.blocks[0].advice[3]") !== undefined, "書き出した時の1番（4行目）に付くべき");
+  truthy(ev("cur.blocks[0].advice[0]") === undefined, "あとから増えた付箋に付いてしまった");
+});
+run("控えと書き出しに案が載る", () => {
+  const rows = ev("noteRows()");
+  const f = rows.filter(r => r.type === "fusen");
+  truthy(f.length >= 1, "付箋の行がない");
+  truthy(f.some(r => r.a && r.a.length), "案が控えに渡っていない");
+  truthy(ev("noteTextBody()").indexOf(" 案：") >= 0, "控えのテキストに案がない");
+});
+ev(`cur = null; curId = null`);
+
 console.log("\nWordの読み書き");
 run("書き出したdocxを自分で読み戻せる", () => {
   const bytes = ev(`buildDocx([para([{t:"人形の部屋",b:true,sz:30}],true), para([{t:"　雨が降っていた。"}]), para([{t:"直す前",st:true,color:"808080"}])])`);

@@ -106,6 +106,12 @@
   .ln.mk.fs{border-left-color:var(--shu)}
   .ln.fx .ln-t{color:var(--sumi)}
   .ln.fx{border-left-color:var(--sumi)}
+  .adv-msg{width:100%;text-align:left;font-size:11.5px;color:var(--fusen);padding:0 4px 7px 12px;line-height:1.7;margin-top:-4px}
+  .adv{margin:12px 0 0;background:rgba(176,125,18,.10);border-radius:3px;padding:11px 12px}
+  .adv b{display:block;font-size:11.5px;color:var(--fusen);font-weight:400;margin-bottom:8px}
+  .adv .cand{display:block;width:100%;text-align:left;font-family:var(--mincho);font-size:15px;line-height:1.8;background:var(--ai);border:1px solid var(--ai3);border-radius:2px;padding:9px 10px;margin-bottom:7px}
+  .adv .cand:hover{border-color:var(--fusen)}
+  .adv .advrest{font-size:12px;color:var(--dim);line-height:1.8;white-space:pre-wrap;margin:0}
   .pen-msg{font-size:11.5px;color:var(--enpitsu);padding:0 4px 7px 12px;line-height:1.7;border-left:2px solid transparent;margin-top:-4px}
   .pen-msg u{text-decoration:none;border-bottom:1px dotted var(--enpitsu)}
   .lnhold{margin-bottom:1px}
@@ -222,6 +228,7 @@
       <button class="go quiet" id="btn-report">傾向表</button>
       <button class="go quiet" id="btn-out">書き出す</button>
     </div>
+    <button class="go quiet" id="btn-talk" style="margin-top:9px">付箋をClaudeに相談する</button>
     <div class="stat" id="w-stat"></div>
     <div class="foot"><button id="btn-del" style="color:#8d9bab">この原稿を消す</button><button id="btn-resize">区切りを割り直す</button><button id="btn-conf2">下読みの設定</button></div>
   </section>
@@ -301,6 +308,19 @@
     <button class="go" id="p-start">この見かたで始める</button>
   </section>
 
+  <!-- 相談 -->
+  <section id="v-talk" class="hide">
+    <div class="brand"><h1 class="sub-h">付箋を相談する</h1><button id="t-back">戻る</button></div>
+    <p class="lead" id="t-lead"></p>
+    <button class="go" id="t-copy">相談票を写す</button>
+    <button class="go quiet" id="t-save" style="margin-top:9px">相談票をテキストで書き出す</button>
+    <p class="hint" style="margin:7px 0 4px">付箋の行を、前後の文といっしょに並べた紙です。この道具は通信しません。写したものをご自分でClaudeに貼ってください。</p>
+    <p class="cat-h">返事を取り込む</p>
+    <p class="hint" style="margin:0 0 9px">Claudeの返事をまるごと貼って押すと、<b>[F1]</b> の番号を見て、それぞれの付箋に案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。</p>
+    <div class="field"><textarea id="t-in" placeholder="ここにClaudeの返事を貼る" style="min-height:150px;font-family:var(--gothic);font-size:14px;line-height:1.8"></textarea></div>
+    <button class="go" id="t-import">取り込む</button>
+  </section>
+
   <!-- 設定 -->
   <section id="v-conf" class="hide">
     <div class="brand"><h1 class="sub-h">下読みの設定</h1><button id="c-back">戻る</button></div>
@@ -348,7 +368,7 @@ function ymd(d){ d=d||new Date(); return d.getFullYear()+"-"+String(d.getMonth()
 function jdate(){ const d=new Date(); return d.getFullYear()+"年"+(d.getMonth()+1)+"月"+d.getDate()+"日"; }
 function stamp(){ const d=new Date(); return ""+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); }
 function mins(n){ const m=Math.max(1,Math.round(n/(conf.cpm||200))); return m<60?m+"分":Math.floor(m/60)+"時間"+(m%60?String(m%60)+"分":""); }
-const VIEWS=["home","work","read","notes","report","out","add","pass","conf","about"];
+const VIEWS=["home","work","read","notes","report","out","add","pass","conf","about","talk"];
 function view(v){ VIEWS.forEach(n=>$("v-"+n).classList.toggle("hide",n!==v)); window.scrollTo(0,0); }
 
 /* ---------- 通しの種類 ---------- */
@@ -389,9 +409,9 @@ function cutBlocks(text,size){
   const out=[];
   sections(t).forEach(sec=>{
     const h=isHead(sec.split("\n")[0]||"");
-    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],fusen:[],edits:{},head:bi===0&&h}));
+    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},head:bi===0&&h}));
   });
-  return out.length?out:[{t:t,done:false,note:"",marks:[],fusen:[],edits:{},head:false}];
+  return out.length?out:[{t:t,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},head:false}];
 }
 
 /* ---------- 一区切りを一文ずつに割る（null＝改行） ---------- */
@@ -614,7 +634,7 @@ function migrate(w){
     w.blocks=old.map((t,i)=>({t:t,done:!!(w.done&&w.done[i]),note:(w.notes&&w.notes[i])||"",marks:(w.marks&&w.marks[i])||[],edits:{},head:false}));
     delete w.done; delete w.notes; delete w.marks;
   }
-  w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.note=b.note||""; });
+  w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.advice=b.advice||{}; b.note=b.note||""; });
   w.pass=w.pass||1; w.kind=w.kind||"typo"; w.log=w.log||[]; w.history=w.history||[]; w.v=2;
 }
 function firstUndone(){ for(let i=0;i<cur.blocks.length;i++) if(!cur.blocks[i].done) return i; return -1; }
@@ -685,11 +705,13 @@ function openBlock(i){
       '<button class="ln-t" data-k="'+k+'">'+esc(t)+'</button>'+
       '<button class="ln-s" data-s="'+k+'" aria-label="朱を置く">朱</button>'+
       '<button class="ln-f" data-f="'+k+'" aria-label="付箋を貼る">付</button></div>'+
+      (b.advice[k]?'<button class="adv-msg" data-a="'+k+'">Claudeの案 '+(advCands(b.advice[k]).length||1)+'件　押して開く</button>':'')+
       (pe?'<div class="pen-msg">'+pe.map(x=>'<u>'+esc(x.msg)+'</u>').join("　")+'</div>':'')+'</div>';
   }).join("");
   $("r-text").querySelectorAll(".ln-t").forEach(el=>el.onclick=()=>openSheet(+el.dataset.k));
   $("r-text").querySelectorAll(".ln-s").forEach(el=>el.onclick=()=>toggleMark(+el.dataset.s));
   $("r-text").querySelectorAll(".ln-f").forEach(el=>el.onclick=()=>toggleFusen(+el.dataset.f));
+  $("r-text").querySelectorAll(".adv-msg").forEach(el=>el.onclick=()=>openSheet(+el.dataset.a));
   showLen();
   $("r-memo").value=b.note||"";
   $("r-done").textContent = b.done? "読み終えた印を消す" : "朱を入れ終えた";
@@ -734,6 +756,7 @@ function openSheet(k){
     (fixed?'<p class="orig">もと：'+esc(org)+'</p>':'')+
     '<textarea id="sh-t">'+esc(now)+'</textarea>'+
     (pens.length?'<p class="pens"><b>鉛筆</b>'+pens.map(x=>esc(x.msg)).join("<br>")+'</p>':'')+
+    advBlock(b.advice[k])+
     '<button class="go" id="sh-save" style="margin-top:13px">直しを入れる</button>'+
     '<div class="row"><button class="go quiet" id="sh-mark">'+(b.marks.indexOf(k)>=0?"朱をはずす":"朱だけ置く")+'</button>'+
     '<button class="go quiet" id="sh-fusen">'+(b.fusen.indexOf(k)>=0?"付箋をはがす":"付箋を貼る")+'</button></div>'+
@@ -746,8 +769,21 @@ function openSheet(k){
   $("sh-save").onclick=applyFix;
   $("sh-mark").onclick=()=>{ toggleMark(k); closeSheet(); };
   $("sh-fusen").onclick=()=>{ toggleFusen(k); closeSheet(); };
+  $("card").querySelectorAll(".cand").forEach(el=>el.onclick=()=>{
+    const ta=$("sh-t"); ta.value=el.dataset.t; ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+  });
+  if($("sh-advdel")) $("sh-advdel").onclick=()=>{ delete b.advice[k]; saveWork(true); openSheet(k); };
   $("sh-close").onclick=closeSheet;
   if(fixed) $("sh-undo").onclick=()=>{ delete b.edits[k]; afterFix("直しをもとに戻しました"); };
+}
+function advBlock(text){
+  if(!text) return "";
+  const cands=advCands(text);
+  const rest=String(text).split("\n").filter(l=>advCands(l).length===0&&l.trim()).join("\n");
+  return '<div class="adv"><b>Claudeの案　押すと下の欄に入ります</b>'+
+    cands.map(c=>'<button class="cand" data-t="'+esc(c)+'">'+esc(c)+'</button>').join("")+
+    (rest?'<p class="advrest">'+esc(rest)+'</p>':'')+
+    '<button class="advrest" id="sh-advdel" style="margin-top:8px;text-decoration:underline">この案を消す</button></div>';
 }
 function closeSheet(){ $("veil").classList.add("hide"); $("card").innerHTML=""; sheetK=-1; }
 function applyFix(){
@@ -906,7 +942,7 @@ function noteRows(){
     ks.forEach(k=>{
       const fixed=b.edits[k]!==undefined;
       if(fixed) rows.push({b:i,k:k,type:"fix",o:ls[k],n:b.edits[k]});
-      if(b.fusen.indexOf(k)>=0) rows.push({b:i,k:k,type:"fusen",o:lineText(b,ls,k)});
+      if(b.fusen.indexOf(k)>=0) rows.push({b:i,k:k,type:"fusen",o:lineText(b,ls,k),a:b.advice[k]||""});
       if(b.marks.indexOf(k)>=0 && !fixed) rows.push({b:i,k:k,type:"mark",o:lineText(b,ls,k)});
     });
     if(b.note.trim()) rows.push({b:i,k:-1,type:"note",o:b.note.trim()});
@@ -923,7 +959,9 @@ function outNoteDocx(){
   rows.forEach(r=>{
     if(r.b!==last){ ps.push(para([{t:(r.b+1)+"区切り目",b:true,sz:21}],true)); last=r.b; }
     if(r.type==="fix"){ ps.push(para([{t:"　",sz:18},{t:r.o,st:true,color:GRAY}])); ps.push(para([{t:"→ ",sz:18},{t:r.n,color:SUMI}])); }
-    else if(r.type==="fusen"){ ps.push(para([{t:"付 ",sz:18,color:FUSEN},{t:r.o,color:FUSEN}])); ps.push(para([{t:"　どう直すか：",sz:18,color:GRAY}])); }
+    else if(r.type==="fusen"){ ps.push(para([{t:"付 ",sz:18,color:FUSEN},{t:r.o,color:FUSEN}]));
+      if(r.a) advCands(r.a).forEach(c=>ps.push(para([{t:"　案："+c,sz:18,color:GRAY}])));
+      ps.push(para([{t:"　どう直すか：",sz:18,color:GRAY}])); }
     else if(r.type==="mark"){ ps.push(para([{t:"朱 ",sz:18,color:SHU},{t:r.o,color:SHU}])); ps.push(para([{t:"　直し：",sz:18,color:GRAY}])); }
     else ps.push(para([{t:"覚 "+r.o,sz:18}]));
   });
@@ -935,13 +973,104 @@ function noteTextBody(){
   rows.forEach(r=>{
     if(r.b!==last){ out+="\n【"+(r.b+1)+"区切り目】\n"; last=r.b; }
     if(r.type==="fix") out+="直  "+r.o+"\n →  "+r.n+"\n";
-    else if(r.type==="fusen") out+="付  "+r.o+"\n どう直すか：\n";
+    else if(r.type==="fusen"){ out+="付  "+r.o+"\n"; if(r.a) advCands(r.a).forEach(c=>out+=" 案："+c+"\n"); out+=" どう直すか：\n"; }
     else if(r.type==="mark") out+="朱  "+r.o+"\n 直：\n";
     else out+="覚  "+r.o+"\n";
   });
   return out;
 }
 function outNoteText(){ saveText(noteTextBody(),cur.title+"_控え_"+stamp()+".txt"); }
+
+/* ============================================================
+   Claudeに相談する
+   付箋＝「どう直すか分からない」＝相談したい場所。
+   前後の文といっしょに番号を振って渡し、[F番号] の付いた返事を貼り戻す。
+   通信はしない。運ぶのは人（写す／ファイル）。
+   ============================================================ */
+function fusenList(){
+  const out=[];
+  cur.blocks.forEach((b,i)=>(b.fusen||[]).slice().sort((a,c)=>a-c).forEach(k=>out.push({b:i,k:k})));
+  return out;
+}
+function ctxLines(b,ls,k,n){
+  const out=[], step=n<0?-1:1, want=Math.abs(n);
+  for(let i=k+step;i>=0&&i<ls.length&&out.length<want;i+=step){
+    if(ls[i]===null) continue;
+    out.push(lineText(b,ls,i));
+  }
+  return n<0?out.reverse():out;
+}
+function talkText(){
+  const list=fusenList();
+  let out="# 朱入れ　相談票\n";
+  out+="作品：「"+cur.title+"」　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）　"+jdate()+"\n";
+  out+="付箋："+list.length+"件\n\n";
+  out+="これは推敲中の小説の原稿です。下に並ぶのは、書き手が「ここが引っかかるけれど、\n";
+  out+="どう直せばいいか決まらない」と付箋を貼った行です。\n";
+  out+="一件ずつ、(1)何が引っかかっているのかの見立て、(2)直しの案を二つ以上、\n";
+  out+="原文の文体・語彙・視点を保ったまま出してください。\n";
+  out+="「前」「後」は文脈です。直すのは ▼ の行だけにしてください。\n\n";
+  out+="返事は次の形でお願いします。この形なら、そのまま朱入れに取り込めます。\n\n";
+  out+="[F1]\n見立て：（一行で）\n案：（直した一文をそのまま。前後の行は書かない）\n案：（別の直しかた）\n\n";
+  if(!list.length) out+="（付箋がありません）\n";
+  list.forEach((t,i)=>{
+    const b=cur.blocks[t.b], ls=lines(b.t);
+    out+="──── [F"+(i+1)+"] "+(t.b+1)+"区切り目 "+(t.k+1)+"行目 ────\n";
+    ctxLines(b,ls,t.k,-2).forEach(x=>out+="前："+x+"\n");
+    out+="▼ "+lineText(b,ls,t.k)+"\n";
+    ctxLines(b,ls,t.k,2).forEach(x=>out+="後："+x+"\n");
+    if(b.note.trim()) out+="この区切りの覚え書き："+b.note.trim()+"\n";
+    out+="\n";
+  });
+  cur.talk={at:Date.now(),keys:list.map(t=>[t.b,t.k])};   /* 番号の対応を控えておく */
+  saveWork(true);
+  return out;
+}
+const han=s=>String(s).replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0));
+/* [F1] の付いた返事を、番号どおりの付箋に配る */
+function importAdvice(raw){
+  const txt=String(raw||"").replace(/\r\n?/g,"\n");
+  const re=/[\[［]\s*[FfＦｆ]\s*([0-9０-９]+)\s*[\]］]/g;
+  const marks=[]; let m;
+  while((m=re.exec(txt))) marks.push({n:parseInt(han(m[1]),10),end:re.lastIndex,at:m.index});
+  if(!marks.length) return {n:0,miss:0};
+  const keys=(cur.talk&&cur.talk.keys&&cur.talk.keys.length)?cur.talk.keys.map(a=>({b:a[0],k:a[1]})):fusenList();
+  let n=0, miss=0;
+  marks.forEach((mk,i)=>{
+    const body=txt.slice(mk.end,i+1<marks.length?marks[i+1].at:txt.length).replace(/^[\s　:：]+/,"").trim();
+    const t=keys[mk.n-1];
+    if(!t||!body||!cur.blocks[t.b]){ miss++; return; }
+    cur.blocks[t.b].advice[t.k]=body; n++;
+  });
+  saveWork(true);
+  return {n:n,miss:miss};
+}
+/* 返事のなかの「案：〜」を、押せる候補として取り出す */
+function advCands(text){
+  const out=[];
+  String(text).split("\n").forEach(l=>{
+    /* 「：」のうしろは全角空白ごと本文として拾う。行頭の字下げを落とさないため */
+    const m=l.match(/^[ \t]*(?:[-*・]\s*)?(?:直し案|案|改案)[0-9０-９]*[ \t]*[:：][ \t]*(.+)$/);
+    if(m){ const t=m[1].replace(/\s+$/,""); if(t) out.push(t); }
+  });
+  return out;
+}
+function renderTalk(){
+  const list=fusenList();
+  $("t-lead").textContent = list.length
+    ? "付箋が"+list.length+"件あります。相談票には、その行と前後二文ずつ、区切りの覚え書きが入ります。およそ"+talkLen(list)+"字。"
+    : "付箋がありません。読みながら行の右の「付」を押すと、ここに集まります。";
+  $("t-copy").classList.toggle("hide",!list.length);
+  $("t-save").classList.toggle("hide",!list.length);
+  $("t-in").value="";
+  view("talk");
+}
+function talkLen(list){
+  let n=520;
+  list.forEach(t=>{ const b=cur.blocks[t.b], ls=lines(b.t);
+    n+=lineText(b,ls,t.k).length+ctxLines(b,ls,t.k,-2).join("").length+ctxLines(b,ls,t.k,2).join("").length+40; });
+  return n.toLocaleString();
+}
 
 /* ============================================================
    画面：控え
@@ -958,7 +1087,7 @@ function renderNotes(){
   $("n-list").innerHTML = show.length? show.map(r=>{
     const h='<em>'+(r.b+1)+'区切り目・'+ROWNAME[r.type]+'</em>';
     if(r.type==="fix") return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span class="old">'+esc(r.o)+'</span><span class="new">'+esc(r.n)+'</span></div>';
-    if(r.type==="fusen") return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span class="fs">'+esc(r.o)+'</span></div>';
+    if(r.type==="fusen") return '<div class="noteitem" data-b="'+r.b+'"><em>'+(r.b+1)+'区切り目・付箋'+(r.a?"・案あり":"")+'</em><span class="fs">'+esc(r.o)+'</span></div>';
     return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span>'+esc(r.o)+'</span></div>';
   }).join("") : (noteFilter==="fusen"
       ? '<div class="empty"><b>付箋はありません</b>どう直すか決まらない行は、行の右の○を押して付箋を貼っておけます。あとでここに集まります。</div>'
@@ -1044,6 +1173,7 @@ $("ab-body").innerHTML=
  '<p class="lead">推敲は、終わりが見えないから重くなります。この道具は本文を二千字前後の<em>区切り</em>に割って、面付けのマスで残りを見せるだけの器です。</p>'+
  '<p class="cat-h">朱と付箋と鉛筆</p><p class="lead"><em>朱</em>は「直す」と決めた行に置く印。<em>付箋</em>は「ここが変だけれど、どう直せばいいか今は分からない」行に貼っておくもの。行の右にある二つの丸を押すだけで付きます。付箋は控えの「付箋」で集めて見返せるので、いま決められないことを抱えたまま先へ進めます。<em>鉛筆</em>は機械が引く線。字面の規則で拾えるものだけを先に拾ってあります。鉛筆はうるさければ設定で消せます。消しても本文は変わりません。</p>'+
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
+ '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+
  '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、区切りのいいところで書き出して控えを取ってください。</p>';
 
@@ -1105,6 +1235,23 @@ $("a-save").onclick=()=>{
 
 $("btn-go").onclick=()=>{ const f=firstUndone(); openBlock(f<0?0:f); };
 $("btn-notes").onclick=renderNotes;
+$("btn-talk").onclick=renderTalk;
+$("t-back").onclick=()=>{ renderWork(); view("work"); };
+$("t-copy").onclick=async()=>{
+  const t=talkText();
+  try{ await navigator.clipboard.writeText(t); toast("写しました　Claudeに貼ってください"); }
+  catch(e){ toast("うまく写せませんでした。書き出しをお使いください"); }
+};
+$("t-save").onclick=()=>saveText(talkText(),cur.title+"_相談票_"+stamp()+".txt");
+$("t-import").onclick=()=>{
+  const v=$("t-in").value.trim();
+  if(!v){ toast("返事を貼ってください"); return; }
+  const r=importAdvice(v);
+  if(!r.n){ toast("［F1］のような番号が見つかりませんでした"); return; }
+  $("t-in").value="";
+  renderWork(); view("work");
+  toast(r.n+"件に案が付きました"+(r.miss?"（"+r.miss+"件は行が見つかりません）":"")+"　行を開くと出てきます");
+};
 $("btn-report").onclick=renderReport;
 $("btn-out").onclick=()=>{
   $("o-lead").textContent=cur.title+"　"+workText(cur).length.toLocaleString()+"字　直し"+fixTotal()+"件・朱"+markTotal()+"件";
