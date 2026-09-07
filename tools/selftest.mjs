@@ -158,7 +158,7 @@ const 相談本文 = [
 ev(`__t = {v:2, id:"x", title:"人形の部屋", blocks: cutBlocks(${JSON.stringify(相談本文)}, 2200), pass:1, kind:"typo", log:[], history:[]}`);
 ev(`migrate(__t); cur = __t; curId = "x"; index = []; yure = null`);
 ev(`cur.blocks[0].fusen = [3]; cur.blocks[0].note = "ここの語尾が重い"`);   /* 二段落目の一文 */
-const 票 = ev("talkText()");
+let 票 = ev("talkText()");
 
 run("相談票に番号と印が入る", () => {
   truthy(票.indexOf("[F1]") >= 0, "番号がない");
@@ -172,6 +172,47 @@ run("前後の文が文脈として付く", () => {
 run("覚え書きと、返事の形の指定が入る", () => {
   truthy(票.indexOf("この区切りの覚え書き：ここの語尾が重い") >= 0, "覚え書きが渡らない");
   truthy(票.indexOf("案：") >= 0 && 票.indexOf("見立て：") >= 0, "返事の形が書かれていない");
+  truthy(票.indexOf("いまは「誤字と表記」の通しです") >= 0, "いまどの観点で読んでいるかが伝わらない");
+});
+run("同じ区切りの覚え書きは一度だけ書く", () => {
+  ev(`cur.blocks[0].fusen = [1, 3]`);
+  const t = ev("talkText()");
+  eq(t.split("この区切りの覚え書き：").length - 1, 1, "同じ覚え書きが何度も出ている");
+  ev(`cur.blocks[0].fusen = [3]`);
+});
+run("相談票が正本のスキルを名指しする", () => {
+  const t = ev("talkText()");
+  truthy(t.indexOf("【先に開いてほしいスキル】") >= 0, "見出しがない");
+  truthy(t.indexOf("・writing-style（文体の正本）") >= 0, "文体の正本が挙がっていない");
+  truthy(t.indexOf("・r18-craft") >= 0, "R18の様式が挙がっていない（既定では入る）");
+  truthy(t.indexOf("記憶ではなく上のスキルに従って") >= 0, "記憶で答えないよう頼んでいない");
+});
+run("世界を選ぶとその設定資料が挙がる", () => {
+  ev(`cur.world = "lukaen-omega"`);
+  const t = ev("talkText()");
+  truthy(t.indexOf("lukaen-omega-reference") >= 0, "シリーズの正本がない");
+  truthy(t.indexOf("genshin-reference") >= 0, "併用すべき原作軸の正本がない");
+});
+run("併用しない組み合わせは、開かないよう書き添える", () => {
+  ev(`cur.world = "lukaen-idol"`);
+  const t = ev("talkText()");
+  truthy(t.indexOf("lukaen-idol-reference") >= 0, "シリーズの正本がない");
+  truthy(t.indexOf("genshin-reference は開かないでください") >= 0, "併用しない旨がない");
+  const head = t.slice(0, t.indexOf("【お願いすること】"));
+  truthy(head.indexOf("・genshin-reference") < 0, "開かないはずの正本を挙げてしまっている");
+});
+run("R18のない作品では r18-craft を挙げない", () => {
+  ev(`cur.world = "zensetsu"; cur.r18 = true`);
+  const t = ev("talkText()");
+  truthy(t.indexOf("zensetsu-reference") >= 0, "シリーズの正本がない");
+  truthy(t.indexOf("・r18-craft") < 0, "全年齢の作品にR18の様式を挙げている");
+  truthy(t.indexOf("r18-craft は開かないでください") >= 0, "開かない理由が書かれていない");
+});
+run("そのほかのスキルも書き添えられる", () => {
+  ev(`cur.world = "none"; cur.r18 = false; cur.moreSkills = "fanfic-production、rework-design"`);
+  const t = ev("talkText()");
+  truthy(t.indexOf("・fanfic-production") >= 0 && t.indexOf("・rework-design") >= 0, "書き足したスキルが出ない");
+  ev(`cur.moreSkills = ""; cur.world = "none"; cur.r18 = true`);
 });
 run("返事を貼ると番号どおりに案が付く", () => {
   const 返事 = [
@@ -184,6 +225,7 @@ run("返事を貼ると番号どおりに案が付く", () => {
     "",
     "他に気になる点があれば言ってください。"
   ].join("\n");
+  票 = ev("talkText()");
   const r = ev(`importAdvice(${JSON.stringify(返事)})`);
   eq(r.n, 1, "取り込めた件数");
   const a = ev("cur.blocks[0].advice[3]");

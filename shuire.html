@@ -312,6 +312,12 @@
   <section id="v-talk" class="hide">
     <div class="brand"><h1 class="sub-h">付箋を相談する</h1><button id="t-back">戻る</button></div>
     <p class="lead" id="t-lead"></p>
+    <p class="cat-h">この作品の見取り</p>
+    <p class="hint" style="margin:0 0 10px">相談票の頭に「先に開いてほしいスキル」として書き添えます。Claudeが記憶ではなく正本を見て答えるようにするためのものです。</p>
+    <div class="field"><label for="t-world">世界</label><select id="t-world"></select></div>
+    <button class="sw" id="t-r18"><i></i><div><b>R18を含む</b><span>点けると r18-craft も開いてもらいます</span></div></button>
+    <div class="field" style="margin-top:14px"><label for="t-more">そのほかに開いてほしいスキル</label><input id="t-more" placeholder="読点で区切って書けます"></div>
+    <p class="hint" id="t-skills" style="margin:0 0 20px"></p>
     <button class="go" id="t-copy">相談票を写す</button>
     <button class="go quiet" id="t-save" style="margin-top:9px">相談票をテキストで書き出す</button>
     <p class="hint" style="margin:7px 0 4px">付箋の行を、前後の文といっしょに並べた紙です。この道具は通信しません。写したものをご自分でClaudeに貼ってください。</p>
@@ -636,6 +642,7 @@ function migrate(w){
   }
   w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.advice=b.advice||{}; b.note=b.note||""; });
   w.pass=w.pass||1; w.kind=w.kind||"typo"; w.log=w.log||[]; w.history=w.history||[]; w.v=2;
+  if(w.world===undefined){ w.world="none"; w.r18=true; w.moreSkills=""; }   /* R18は既定で入っている前提 */
 }
 function firstUndone(){ for(let i=0;i<cur.blocks.length;i++) if(!cur.blocks[i].done) return i; return -1; }
 function markTotal(){ return cur.blocks.reduce((a,b)=>a+b.marks.length,0); }
@@ -987,6 +994,34 @@ function outNoteText(){ saveText(noteTextBody(),cur.title+"_控え_"+stamp()+".t
    前後の文といっしょに番号を振って渡し、[F番号] の付いた返事を貼り戻す。
    通信はしない。運ぶのは人（写す／ファイル）。
    ============================================================ */
+/* 作品の世界と、そのとき開いてほしいスキル。
+   併用の可否はスキル側の取り決めに合わせてある（勝手に足さない・勝手に開かせない） */
+const WORLDS=[
+  {id:"none", name:"（決めない）", skills:[]},
+  {id:"genshin", name:"原神（原作軸）", skills:["genshin-reference"]},
+  {id:"lukaen-idol", name:"アムル世界（現代芸能界パロ）", skills:["lukaen-idol-reference"],
+   note:"この世界に原神の原作軸は出てこないので、genshin-reference は開かないでください。"},
+  {id:"lukaen-omega", name:"オメガバース（ファルカ×ローエン）", skills:["lukaen-omega-reference","genshin-reference"],
+   note:"このシリーズは原作軸の上に乗っているので、genshin-reference も必ず併せて開いてください。"},
+  {id:"lukaen-domsub", name:"Dom/Sub（ファルカ×ローエン）", skills:["lukaen-domsub-reference","genshin-reference"],
+   note:"Dom/Subの設定は lukaen-domsub-reference、濡れ場の様式そのものは r18-craft が正本です。"},
+  {id:"zensetsu", name:"『前説』（恋愛なし・全年齢）", skills:["zensetsu-reference","genshin-reference"], noR18:true,
+   note:"R18の存在しない作品なので r18-craft は開かないでください。アムル世界とは別世界・非接続です。文体は Mode B。"},
+  {id:"fgo", name:"FGO（原作軸）", skills:["fgo-reference"]},
+  {id:"gilkado-tama", name:"多摩の坂（ギルカド現代AU）", skills:["gilkado-tama-reference"],
+   note:"この世界にFGOの原作軸は出てこないので、fgo-reference は開かないでください。"},
+  {id:"hsr", name:"崩壊スターレイル", skills:["hsr-reference"]},
+  {id:"zzz", name:"ゼンレスゾーンゼロ", skills:["zzz-reference"]}
+];
+const worldOf=id=>WORLDS.find(w=>w.id===id)||WORLDS[0];
+function talkSkills(){
+  const w=worldOf(cur.world);
+  const out=[{n:"writing-style",why:"文体の正本"}];
+  w.skills.forEach((k,i)=>out.push({n:k,why:i?"併せて開く設定の正本":"この作品の設定の正本"}));
+  if(cur.r18 && !w.noR18) out.push({n:"r18-craft",why:"R18の様式の正本"});
+  String(cur.moreSkills||"").split(/[、,\s]+/).forEach(k=>{ k=k.trim(); if(k) out.push({n:k,why:""}); });
+  return out;
+}
 function fusenList(){
   const out=[];
   cur.blocks.forEach((b,i)=>(b.fusen||[]).slice().sort((a,c)=>a-c).forEach(k=>out.push({b:i,k:k})));
@@ -1005,11 +1040,18 @@ function talkText(){
   let out="# 朱入れ　相談票\n";
   out+="作品：「"+cur.title+"」　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）　"+jdate()+"\n";
   out+="付箋："+list.length+"件\n\n";
+  const sk=talkSkills(), w=worldOf(cur.world);
+  out+="【先に開いてほしいスキル】\n";
+  sk.forEach(x=>out+="・"+x.n+(x.why?"（"+x.why+"）":"")+"\n");
+  if(w.note) out+="※ "+w.note+"\n";
+  out+="文体・呼称・口調・世界観の裁定は、記憶ではなく上のスキルに従ってください。\n\n";
+  out+="【お願いすること】\n";
   out+="これは推敲中の小説の原稿です。下に並ぶのは、書き手が「ここが引っかかるけれど、\n";
   out+="どう直せばいいか決まらない」と付箋を貼った行です。\n";
   out+="一件ずつ、(1)何が引っかかっているのかの見立て、(2)直しの案を二つ以上、\n";
   out+="原文の文体・語彙・視点を保ったまま出してください。\n";
-  out+="「前」「後」は文脈です。直すのは ▼ の行だけにしてください。\n\n";
+  out+="「前」「後」は文脈です。直すのは ▼ の行だけにしてください。\n";
+  out+="いまは「"+kindOf(cur.kind).name+"」の通しです（"+kindOf(cur.kind).look+"）。\n\n";
   out+="返事は次の形でお願いします。この形なら、そのまま朱入れに取り込めます。\n\n";
   out+="[F1]\n見立て：（一行で）\n案：（直した一文をそのまま。前後の行は書かない）\n案：（別の直しかた）\n\n";
   if(!list.length) out+="（付箋がありません）\n";
@@ -1019,7 +1061,7 @@ function talkText(){
     ctxLines(b,ls,t.k,-2).forEach(x=>out+="前："+x+"\n");
     out+="▼ "+lineText(b,ls,t.k)+"\n";
     ctxLines(b,ls,t.k,2).forEach(x=>out+="後："+x+"\n");
-    if(b.note.trim()) out+="この区切りの覚え書き："+b.note.trim()+"\n";
+    if(b.note.trim() && (i===0||list[i-1].b!==t.b)) out+="この区切りの覚え書き："+b.note.trim()+"\n";
     out+="\n";
   });
   cur.talk={at:Date.now(),keys:list.map(t=>[t.b,t.k])};   /* 番号の対応を控えておく */
@@ -1057,6 +1099,12 @@ function advCands(text){
 }
 function renderTalk(){
   const list=fusenList();
+  const w=worldOf(cur.world);
+  $("t-world").innerHTML=WORLDS.map(x=>'<option value="'+x.id+'"'+(x.id===cur.world?" selected":"")+'>'+esc(x.name)+'</option>').join("");
+  $("t-r18").classList.toggle("on",!!cur.r18&&!w.noR18);
+  $("t-r18").classList.toggle("hide",!!w.noR18);
+  $("t-more").value=cur.moreSkills||"";
+  $("t-skills").textContent="開いてもらうもの："+talkSkills().map(x=>x.n).join("、")+(w.note?"　／　"+w.note:"");
   $("t-lead").textContent = list.length
     ? "付箋が"+list.length+"件あります。相談票には、その行と前後二文ずつ、区切りの覚え書きが入ります。およそ"+talkLen(list)+"字。"
     : "付箋がありません。読みながら行の右の「付」を押すと、ここに集まります。";
@@ -1173,7 +1221,7 @@ $("ab-body").innerHTML=
  '<p class="lead">推敲は、終わりが見えないから重くなります。この道具は本文を二千字前後の<em>区切り</em>に割って、面付けのマスで残りを見せるだけの器です。</p>'+
  '<p class="cat-h">朱と付箋と鉛筆</p><p class="lead"><em>朱</em>は「直す」と決めた行に置く印。<em>付箋</em>は「ここが変だけれど、どう直せばいいか今は分からない」行に貼っておくもの。行の右にある二つの丸を押すだけで付きます。付箋は控えの「付箋」で集めて見返せるので、いま決められないことを抱えたまま先へ進めます。<em>鉛筆</em>は機械が引く線。字面の規則で拾えるものだけを先に拾ってあります。鉛筆はうるさければ設定で消せます。消しても本文は変わりません。</p>'+
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
- '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
+ '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。相談の画面で作品の世界を選んでおくと、票の頭に「先に開いてほしいスキル」（文体の正本、その作品の設定の正本、R18の様式）が並ぶので、Claudeは記憶ではなく正本を見て答えます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+
  '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、区切りのいいところで書き出して控えを取ってください。</p>';
 
@@ -1222,7 +1270,8 @@ $("a-save").onclick=()=>{
   const blocks=cutBlocks(body,size);
   if(!blocks.length){ toast("区切れませんでした"); return; }
   const id=String(Date.now());
-  cur={v:2,id:id,title:title,created:Date.now(),size:size,blocks:blocks,pass:1,kind:"typo",log:[],history:[]};
+  cur={v:2,id:id,title:title,created:Date.now(),size:size,blocks:blocks,pass:1,kind:"typo",log:[],history:[],
+       world:"none",r18:true,moreSkills:""};
   curId=id;
   index.unshift({id:id,title:title,done:0,total:blocks.length,pass:1,kind:"typo"});
   jset(K_INDEX,index);
@@ -1237,6 +1286,9 @@ $("btn-go").onclick=()=>{ const f=firstUndone(); openBlock(f<0?0:f); };
 $("btn-notes").onclick=renderNotes;
 $("btn-talk").onclick=renderTalk;
 $("t-back").onclick=()=>{ renderWork(); view("work"); };
+$("t-world").onchange=()=>{ cur.world=$("t-world").value; saveWork(true); renderTalk(); };
+$("t-r18").onclick=()=>{ cur.r18=!cur.r18; saveWork(true); renderTalk(); };
+$("t-more").onchange=()=>{ cur.moreSkills=$("t-more").value.replace(/[\r\n]+/g," ").slice(0,200); saveWork(true); renderTalk(); };
 $("t-copy").onclick=async()=>{
   const t=talkText();
   try{ await navigator.clipboard.writeText(t); toast("写しました　Claudeに貼ってください"); }

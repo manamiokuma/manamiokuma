@@ -147,9 +147,32 @@ await step("相談票を書き出せる", async () => {
   const st = await d.createReadStream();
   let body = ""; for await (const c of st) body += c;
   must(body.includes("[F1]"), "番号がない");
+  must(body.includes("・writing-style"), "文体の正本が挙がっていない");
   must(body.includes("▼ 窓の外は白く煙って"), "相談する行がない");
   must(body.includes("前：　雨が降りつづいていた。"), "前の行が直したあとの本文になっていない");
   must(body.includes("案："), "返事の形が書かれていない");
+});
+await step("世界を選ぶと開いてもらうスキルが変わる", async () => {
+  await p.selectOption("#t-world", "lukaen-idol");
+  const t = await p.textContent("#t-skills");
+  must(t.includes("lukaen-idol-reference"), "設定の正本が出ない: " + t);
+  must(t.includes("開かないでください"), "併用しない旨が出ない");
+  must(await p.locator("#t-r18").isVisible(), "R18の切り替えが出ない");
+  await p.selectOption("#t-world", "zensetsu");
+  must(!(await p.locator("#t-r18").isVisible()), "全年齢の世界でR18の切り替えが残っている");
+  const list = (await p.textContent("#t-skills")).split("／")[0];   /* 注記のほうに名前が出るので、一覧だけを見る */
+  must(!list.includes("r18-craft"), "全年齢なのにR18の様式が一覧に出る: " + list);
+  must(list.includes("zensetsu-reference"), "シリーズの正本が一覧にない: " + list);
+  await p.selectOption("#t-world", "none");
+});
+await step("見取りは読み込み直しても残る", async () => {
+  await p.selectOption("#t-world", "lukaen-omega");
+  await p.reload();
+  await p.locator(".work").first().click();
+  await p.click("#btn-talk");
+  must((await p.inputValue("#t-world")) === "lukaen-omega", "世界が残らない");
+  must((await p.textContent("#t-skills")).includes("genshin-reference"), "併用する正本が残らない");
+  await p.selectOption("#t-world", "none");
 });
 await step("Claudeの返事を貼ると案が付く", async () => {
   await p.fill("#t-in", [
