@@ -65,6 +65,22 @@ await step("朱を置く／はずす", async () => {
   await p.locator(".ln-s").nth(1).click();
   must(await p.locator(".ln.mk").count() === 0, "朱がはずれない");
 });
+await step("付箋をボタン一つで貼る／はがす", async () => {
+  must((await p.locator(".ln-f").first().textContent()) === "付", "どちらのボタンか字で分からない");
+  must((await p.locator(".ln-s").first().textContent()) === "朱", "どちらのボタンか字で分からない");
+  await p.locator(".ln-f").nth(2).click();
+  must(await p.locator(".ln.fs").count() === 1, "付箋が付かない");
+  must((await p.textContent("#r-len")).includes("付1"), "付箋の数が出ない");
+  await p.locator(".ln-f").nth(2).click();
+  must(await p.locator(".ln.fs").count() === 0, "付箋がはがれない");
+  await p.locator(".ln-f").nth(2).click();
+});
+await step("朱と付箋は別々に付く", async () => {
+  await p.locator(".ln-s").nth(3).click();
+  must(await p.locator(".ln.fs").count() === 1, "付箋が消えた");
+  must(await p.locator(".ln.mk").count() === 1, "朱が付かない");
+  await p.locator(".ln-s").nth(3).click();
+});
 await step("行をその場で直す", async () => {
   await p.locator(".ln-t").nth(1).click();
   must(await p.locator("#veil").isVisible(), "シートが開かない");
@@ -97,12 +113,27 @@ await step("最後まで行くと作品画面に戻る", async () => {
   must(await vis("work"), "作品画面に戻らない");
   must(await p.locator("#w-sheet .cell.done").count() === 2, "マスが埋まらない");
 });
-await step("控えに直しと朱と覚え書きが並ぶ", async () => {
+await step("控えに直しと付箋と覚え書きが並ぶ", async () => {
   await p.click("#btn-notes");
   must(await vis("notes"), "控えが開かない");
   const t = await p.textContent("#n-list");
   must(t.includes("雨が降りつづいていた"), "直しが載っていない");
   must(t.includes("三章の呼称ゆれ"), "覚え書きが載っていない");
+  must(t.includes("付箋"), "付箋が載っていない");
+});
+await step("付箋だけに絞れる", async () => {
+  await p.locator('#n-filter button[data-f="fusen"]').click();
+  const items = await p.locator(".noteitem").count();
+  must(items === 1, "付箋だけにならない（" + items + "件）");
+  must((await p.textContent(".noteitem em")).includes("付箋"), "付箋以外が混じっている");
+});
+await step("控えから元の区切りへ戻れる", async () => {
+  await p.locator(".noteitem").first().click();
+  must(await vis("read"), "読む画面に戻らない");
+  must(await p.locator(".ln.fs").count() === 1, "付箋が残っていない");
+  await p.click("#r-back");
+  await p.click("#btn-notes");
+  await p.locator('#n-filter button[data-f="all"]').click();
   await p.click("#n-back");
 });
 await step("傾向表が出る", async () => {
@@ -110,6 +141,7 @@ await step("傾向表が出る", async () => {
   must(await vis("report"), "傾向表が開かない");
   const t = await p.textContent("#rp-body");
   must(t.includes("誤字と表記") && t.includes("文体とリズム"), "分類が出ない");
+  must(t.includes("いま残っているもの") && t.includes("付箋"), "残りの付箋が出ない");
   must(t.includes("1回目"), "通しごとの数が出ない");
   await p.click("#rp-back");
 });
@@ -121,6 +153,7 @@ await step("次の通しへ移ると見かたが変わる", async () => {
   const t = await p.textContent("#w-pass");
   must(t.includes("2回目") && t.includes("文体"), "札が変わらない: " + t);
   must(await p.locator("#w-sheet .cell.done").count() === 0, "マスが白紙に戻らない");
+  must(await p.locator("#w-sheet .cell.fusen").count() === 1, "通しをまたいで付箋が残っていない");
 });
 await step("通しを変えると鉛筆の種類も変わる", async () => {
   await p.click("#btn-go");
@@ -153,6 +186,7 @@ await step("テキストが書き出せる", async () => {
   let body = ""; for await (const c of s) body += c;
   must(body.includes("雨が降りつづいていた"), "直しが本文に入っていない");
   must(body.includes("第二章"), "後ろの章が落ちている");
+  must(!body.includes("付"), "入稿用のテキストに印が混じっている");
 });
 await step("Wordが書き出せる", async () => {
   const dl = p.waitForEvent("download");
@@ -167,6 +201,15 @@ await step("控えのWordが書き出せる", async () => {
   const d = await dl;
   await d.saveAs("tools/tmp-hikae.docx");
 });
+await step("控えのテキストに付箋が入る", async () => {
+  const dl = p.waitForEvent("download");
+  await p.click("#o-note-txt");
+  const d = await dl;
+  const st = await d.createReadStream();
+  let body = ""; for await (const c of st) body += c;
+  must(body.includes("付  "), "付箋の行がない");
+  must(body.includes("どう直すか："), "書き込む場所がない");
+});
 await step("読み込み直しても残っている", async () => {
   await p.click("#o-back");
   await p.reload();
@@ -178,6 +221,7 @@ await step("読み込み直しても残っている", async () => {
   must((await p.textContent("#w-stat")).includes("直した"), "統計が出ない");
   await p.click("#btn-go");
   must((await p.locator(".ln-t").nth(1).textContent()) === "　雨が降りつづいていた。", "直しが残っていない");
+  must(await p.locator(".ln.fs").count() === 1, "付箋が残っていない");
 });
 await step("区切りを割り直しても直しは残る", async () => {
   await p.click("#r-back");

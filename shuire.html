@@ -14,6 +14,7 @@
     --dim:#63788c;       /* 補助 */
     --enpitsu:#7b8fa3;   /* 鉛筆＝機械の下読み */
     --shu:#c6301b;       /* 朱＝人の判断 */
+    --fusen:#b07d12;     /* 付箋＝あとで考える */
     --shu-d:#97220f;
     --sumi:#2f5d50;      /* 直した印 */
     --gothic:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic",'Noto Sans JP',system-ui,sans-serif;
@@ -55,6 +56,8 @@
   .cell.next{border-color:var(--kami);color:var(--kami);border-width:1.5px}
   .cell.head::before{content:"";position:absolute;left:2px;right:2px;top:-3px;height:2px;background:var(--kami);border-radius:1px}
   .cell .pen{position:absolute;right:1px;bottom:0;font-size:8px;color:var(--enpitsu)}
+  .cell.fusen::after{content:"";position:absolute;right:0;top:0;border:5px solid transparent;border-top-color:var(--fusen);border-right-color:var(--fusen)}
+  .cell.done.fusen::after{border-top-color:#f2dcae;border-right-color:#f2dcae}
   .cell.done .pen{color:rgba(255,255,255,.75)}
   .cell.ink{animation:ink .45s ease-out}
   @keyframes ink{0%{transform:scale(.72)}55%{transform:scale(1.13)}100%{transform:scale(1)}}
@@ -94,9 +97,13 @@
   .text{padding:18px 0 8px}
   .ln{display:flex;align-items:flex-start;gap:2px;border-left:2px solid transparent;border-radius:0 2px 2px 0;transition:background .15s,border-color .15s}
   .ln-t{flex:1;text-align:left;font-family:var(--mincho);font-size:17px;line-height:2.05;letter-spacing:.02em;color:var(--kami);padding:5px 4px 5px 12px;white-space:pre-wrap;word-break:break-word}
-  .ln-s{flex:0 0 auto;align-self:stretch;width:34px;font-size:11px;color:#aebbc6;padding:8px 0 0;font-family:var(--mincho)}
+  .ln-s,.ln-f{flex:0 0 auto;align-self:stretch;width:30px;font-size:11.5px;color:#c3ccd4;padding:8px 0 0;font-family:var(--mincho);transition:color .15s}
+  .ln-s:hover,.ln-f:hover{color:var(--dim)}
   .ln.mk{border-left-color:var(--shu);background:rgba(198,48,27,.09)}
   .ln.mk .ln-s{color:var(--shu)}
+  .ln.fs{border-left-color:var(--fusen);background:rgba(176,125,18,.11)}
+  .ln.fs .ln-f{color:var(--fusen)}
+  .ln.mk.fs{border-left-color:var(--shu)}
   .ln.fx .ln-t{color:var(--sumi)}
   .ln.fx{border-left-color:var(--sumi)}
   .pen-msg{font-size:11.5px;color:var(--enpitsu);padding:0 4px 7px 12px;line-height:1.7;border-left:2px solid transparent;margin-top:-4px}
@@ -116,6 +123,10 @@
   .noteitem span{font-family:var(--mincho);font-size:15px;white-space:pre-wrap}
   .noteitem .old{color:var(--dim);text-decoration:line-through;text-decoration-color:var(--shu)}
   .noteitem .new{color:var(--sumi)}
+  .noteitem .fs{color:var(--fusen)}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 10px}
+  .chips button{font-size:12px;border:1px solid var(--ai3);border-radius:14px;padding:6px 12px;color:var(--dim);background:var(--ai2);font-variant-numeric:tabular-nums}
+  .chips button.on{border-color:var(--kami);color:var(--kami);background:var(--ai)}
 
   /* 傾向表 */
   .tally{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums;margin-top:6px}
@@ -238,6 +249,7 @@
   <section id="v-notes" class="hide">
     <div class="brand"><h1 class="sub-h">控え</h1><button id="n-back">戻る</button></div>
     <p class="lead" id="n-lead"></p>
+    <div class="chips" id="n-filter"></div>
     <div id="n-list"></div>
     <button class="go quiet" id="n-copy" style="margin-top:18px">ぜんぶ写す</button>
   </section>
@@ -377,9 +389,9 @@ function cutBlocks(text,size){
   const out=[];
   sections(t).forEach(sec=>{
     const h=isHead(sec.split("\n")[0]||"");
-    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],edits:{},head:bi===0&&h}));
+    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],fusen:[],edits:{},head:bi===0&&h}));
   });
-  return out.length?out:[{t:t,done:false,note:"",marks:[],edits:{},head:false}];
+  return out.length?out:[{t:t,done:false,note:"",marks:[],fusen:[],edits:{},head:false}];
 }
 
 /* ---------- 一区切りを一文ずつに割る（null＝改行） ---------- */
@@ -602,11 +614,12 @@ function migrate(w){
     w.blocks=old.map((t,i)=>({t:t,done:!!(w.done&&w.done[i]),note:(w.notes&&w.notes[i])||"",marks:(w.marks&&w.marks[i])||[],edits:{},head:false}));
     delete w.done; delete w.notes; delete w.marks;
   }
-  w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.edits=b.edits||{}; b.note=b.note||""; });
+  w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.note=b.note||""; });
   w.pass=w.pass||1; w.kind=w.kind||"typo"; w.log=w.log||[]; w.history=w.history||[]; w.v=2;
 }
 function firstUndone(){ for(let i=0;i<cur.blocks.length;i++) if(!cur.blocks[i].done) return i; return -1; }
 function markTotal(){ return cur.blocks.reduce((a,b)=>a+b.marks.length,0); }
+function fusenTotal(){ return cur.blocks.reduce((a,b)=>a+(b.fusen?b.fusen.length:0),0); }
 function fixTotal(){ return cur.blocks.reduce((a,b)=>a+Object.keys(b.edits).length,0); }
 function penTotal(){ return penCache.reduce((a,m)=>a+penCount(m),0); }
 
@@ -622,17 +635,18 @@ function renderWork(){
   $("w-sheet").className="sheet";
   $("w-sheet").innerHTML=cur.blocks.map((b,i)=>{
     const p=penCount(penCache[i]||{});
-    return '<button class="cell '+(b.done?"done":"")+' '+(i===firstUndone()?"next":"")+' '+(b.head?"head":"")+'" data-i="'+i+'">'+(i+1)+
+    return '<button class="cell '+(b.done?"done":"")+' '+(i===firstUndone()?"next":"")+' '+(b.head?"head":"")+' '+((b.fusen&&b.fusen.length)?"fusen":"")+'" data-i="'+i+'">'+(i+1)+
       (p&&!b.done?'<span class="pen">'+(p>9?"＋":p)+'</span>':'')+'</button>';
   }).join("");
   $("w-sheet").querySelectorAll(".cell").forEach(c=>c.onclick=()=>openBlock(+c.dataset.i));
   const f=firstUndone();
   $("btn-go").textContent = f<0? "はじめから読み直す" : (cur.blocks.some(b=>b.done)? "つづきを読む（"+(f+1)+"区切り目）" : "読みはじめる");
   const notes=cur.blocks.filter(b=>b.note.trim()).length;
-  $("btn-notes").textContent = "控え "+(markTotal()+fixTotal()+notes)+"件";
+  $("btn-notes").textContent = "控え "+(markTotal()+fusenTotal()+fixTotal()+notes)+"件";
   $("w-stat").innerHTML='<div><b>'+cur.blocks.filter(b=>b.done).length+'</b><span>読み終えた</span></div>'+
     '<div><b>'+fixTotal()+'</b><span>直した</span></div>'+
     '<div><b>'+markTotal()+'</b><span>朱を置いた</span></div>'+
+    '<div><b>'+fusenTotal()+'</b><span>付箋</span></div>'+
     '<div><b>'+cur.pass+'</b><span>通した回数</span></div>';
 }
 
@@ -665,15 +679,17 @@ function openBlock(i){
   $("r-nextpen").textContent="鉛筆 "+pn+"行";
   $("r-text").innerHTML=ls.map((s,k)=>{
     if(s===null) return '<div class="lngap"></div>';
-    const t=lineText(b,ls,k), mk=b.marks.indexOf(k)>=0, fx=disp(b,k)!==null, pe=pens[k];
+    const t=lineText(b,ls,k), mk=b.marks.indexOf(k)>=0, fs=b.fusen.indexOf(k)>=0, fx=disp(b,k)!==null, pe=pens[k];
     return '<div class="lnhold'+(pe?" pen":"")+'" data-k="'+k+'">'+
-      '<div class="ln'+(mk?" mk":"")+(fx?" fx":"")+'">'+
+      '<div class="ln'+(mk?" mk":"")+(fs?" fs":"")+(fx?" fx":"")+'">'+
       '<button class="ln-t" data-k="'+k+'">'+esc(t)+'</button>'+
-      '<button class="ln-s" data-s="'+k+'" aria-label="朱">'+(mk?"朱":"○")+'</button></div>'+
+      '<button class="ln-s" data-s="'+k+'" aria-label="朱を置く">朱</button>'+
+      '<button class="ln-f" data-f="'+k+'" aria-label="付箋を貼る">付</button></div>'+
       (pe?'<div class="pen-msg">'+pe.map(x=>'<u>'+esc(x.msg)+'</u>').join("　")+'</div>':'')+'</div>';
   }).join("");
   $("r-text").querySelectorAll(".ln-t").forEach(el=>el.onclick=()=>openSheet(+el.dataset.k));
   $("r-text").querySelectorAll(".ln-s").forEach(el=>el.onclick=()=>toggleMark(+el.dataset.s));
+  $("r-text").querySelectorAll(".ln-f").forEach(el=>el.onclick=()=>toggleFusen(+el.dataset.f));
   showLen();
   $("r-memo").value=b.note||"";
   $("r-done").textContent = b.done? "読み終えた印を消す" : "朱を入れ終えた";
@@ -681,8 +697,8 @@ function openBlock(i){
 }
 function showLen(){
   const b=cur.blocks[pos];
-  const n=b.marks.length, f=Object.keys(b.edits).length;
-  $("r-len").textContent=blockText(b).length+"字"+(n?"・朱"+n:"")+(f?"・直"+f:"");
+  const n=b.marks.length, g=b.fusen.length, f=Object.keys(b.edits).length;
+  $("r-len").textContent=blockText(b).length+"字"+(n?"・朱"+n:"")+(g?"・付"+g:"")+(f?"・直"+f:"");
 }
 function refreshBlockPen(){
   penCache[pos]=readBlock(cur.blocks[pos], kindOf(cur.kind).cats);
@@ -691,8 +707,17 @@ function toggleMark(k){
   const b=cur.blocks[pos], j=b.marks.indexOf(k);
   if(j>=0) b.marks.splice(j,1); else { b.marks.push(k); b.marks.sort((x,y)=>x-y); }
   const hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
-  if(hold){ const ln=hold.querySelector(".ln"); ln.classList.toggle("mk",j<0); hold.querySelector(".ln-s").textContent=(j<0?"朱":"○"); }
+  if(hold) hold.querySelector(".ln").classList.toggle("mk",j<0);
   showLen(); saveWork();
+}
+/* 付箋＝直したいが、どう直すかまだ決まっていない行 */
+function toggleFusen(k){
+  const b=cur.blocks[pos], j=b.fusen.indexOf(k);
+  if(j>=0) b.fusen.splice(j,1); else { b.fusen.push(k); b.fusen.sort((x,y)=>x-y); }
+  const hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
+  if(hold) hold.querySelector(".ln").classList.toggle("fs",j<0);
+  showLen(); saveWork();
+  toast(j>=0?"付箋をはがしました":"付箋を貼りました　あとで控えから戻れます");
 }
 function saveMemo(){
   const b=cur.blocks[pos], v=$("r-memo").value.trim();
@@ -711,7 +736,8 @@ function openSheet(k){
     (pens.length?'<p class="pens"><b>鉛筆</b>'+pens.map(x=>esc(x.msg)).join("<br>")+'</p>':'')+
     '<button class="go" id="sh-save" style="margin-top:13px">直しを入れる</button>'+
     '<div class="row"><button class="go quiet" id="sh-mark">'+(b.marks.indexOf(k)>=0?"朱をはずす":"朱だけ置く")+'</button>'+
-    (fixed?'<button class="go quiet" id="sh-undo">もとに戻す</button>':'')+
+    '<button class="go quiet" id="sh-fusen">'+(b.fusen.indexOf(k)>=0?"付箋をはがす":"付箋を貼る")+'</button></div>'+
+    '<div class="row">'+(fixed?'<button class="go quiet" id="sh-undo">もとに戻す</button>':'')+
     '<button class="go quiet" id="sh-close">閉じる</button></div>';
   $("veil").classList.remove("hide");
   const ta=$("sh-t");
@@ -719,6 +745,7 @@ function openSheet(k){
   ta.onkeydown=e=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter") applyFix(); };
   $("sh-save").onclick=applyFix;
   $("sh-mark").onclick=()=>{ toggleMark(k); closeSheet(); };
+  $("sh-fusen").onclick=()=>{ toggleFusen(k); closeSheet(); };
   $("sh-close").onclick=closeSheet;
   if(fixed) $("sh-undo").onclick=()=>{ delete b.edits[k]; afterFix("直しをもとに戻しました"); };
 }
@@ -824,7 +851,7 @@ function para(runs,head){
     (r.color?'<w:color w:val="'+r.color+'"/>':"")+(r.b?"<w:b/>":"")+(r.st?"<w:strike/>":"")+
     '<w:sz w:val="'+(r.sz||21)+'"/></w:rPr><w:t xml:space="preserve">'+X(r.t)+'</w:t></w:r>').join("")+'</w:p>';
 }
-const SHU="C00000", SUMI="2F5D50", GRAY="808080";
+const SHU="C00000", SUMI="2F5D50", GRAY="808080", FUSEN="B07D12";
 function buildDocx(paras){
   const enc=new TextEncoder();
   const doc='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
@@ -849,17 +876,21 @@ function headParas(sub){
           para([{t:jdate()+"　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）　"+sub,sz:18,color:GRAY}])];
 }
 /* --- 直した本文 --- */
-function outText(){ saveText(workText(cur),cur.title+"_"+stamp()+".txt"); }
+function outText(){
+  saveText(workText(cur),cur.title+"_"+stamp()+".txt");
+  const g=fusenTotal();
+  if(g) setTimeout(()=>toast("付箋が"+g+"件そのままです。控えから戻れます"),1200);
+}
 function outOrig(){ saveText(origText(cur),cur.title+"_もとの本文_"+stamp()+".txt"); }
 function outDocx(){
-  const ps=headParas("直した行は緑、朱を置いた行は赤");
+  const ps=headParas("直した行は緑、朱を置いた行は赤、付箋は山吹");
   cur.blocks.forEach((b,i)=>{
     const ls=lines(b.t); let buf=[];
     const flush=()=>{ if(buf.length){ ps.push(para(buf)); buf=[]; } };
     ls.forEach((s,k)=>{
       if(s===null){ flush(); return; }
-      const fx=disp(b,k)!==null, mk=b.marks.indexOf(k)>=0;
-      buf.push({t:lineText(b,ls,k), color: fx?SUMI:(mk?SHU:null)});
+      const fx=disp(b,k)!==null, mk=b.marks.indexOf(k)>=0, fs=b.fusen.indexOf(k)>=0;
+      buf.push({t:lineText(b,ls,k), color: fx?SUMI:(mk?SHU:(fs?FUSEN:null))});
     });
     flush();
     if(b.note.trim()) ps.push(para([{t:"［覚え書き："+b.note.trim()+"］",sz:18,color:SHU}]));
@@ -871,22 +902,28 @@ function noteRows(){
   const rows=[];
   cur.blocks.forEach((b,i)=>{
     const ls=lines(b.t);
-    Object.keys(b.edits).map(Number).sort((a,c)=>a-c).forEach(k=>{
-      rows.push({b:i,k:k,type:"fix",o:ls[k],n:b.edits[k]});
+    const ks=[...new Set([].concat(Object.keys(b.edits).map(Number), b.marks, b.fusen))].sort((a,c)=>a-c);
+    ks.forEach(k=>{
+      const fixed=b.edits[k]!==undefined;
+      if(fixed) rows.push({b:i,k:k,type:"fix",o:ls[k],n:b.edits[k]});
+      if(b.fusen.indexOf(k)>=0) rows.push({b:i,k:k,type:"fusen",o:lineText(b,ls,k)});
+      if(b.marks.indexOf(k)>=0 && !fixed) rows.push({b:i,k:k,type:"mark",o:lineText(b,ls,k)});
     });
-    b.marks.forEach(k=>{ if(b.edits[k]===undefined) rows.push({b:i,k:k,type:"mark",o:lineText(b,ls,k)}); });
     if(b.note.trim()) rows.push({b:i,k:-1,type:"note",o:b.note.trim()});
   });
   return rows.sort((a,c)=>a.b-c.b||a.k-c.k);
 }
+const ROWNAME={fix:"直し",fusen:"付箋",mark:"朱",note:"覚え書き"};
+function rowCount(rows,t){ return rows.filter(r=>r.type===t).length; }
 function outNoteDocx(){
   const rows=noteRows();
-  const ps=headParas("直し"+rows.filter(r=>r.type==="fix").length+"／朱"+rows.filter(r=>r.type==="mark").length+"／覚え書き"+rows.filter(r=>r.type==="note").length);
+  const ps=headParas("直し"+rowCount(rows,"fix")+"／付箋"+rowCount(rows,"fusen")+"／朱"+rowCount(rows,"mark")+"／覚え書き"+rowCount(rows,"note"));
   let last=-1;
   if(!rows.length) ps.push(para([{t:"まだ何もありません。",sz:20,color:GRAY}]));
   rows.forEach(r=>{
     if(r.b!==last){ ps.push(para([{t:(r.b+1)+"区切り目",b:true,sz:21}],true)); last=r.b; }
     if(r.type==="fix"){ ps.push(para([{t:"　",sz:18},{t:r.o,st:true,color:GRAY}])); ps.push(para([{t:"→ ",sz:18},{t:r.n,color:SUMI}])); }
+    else if(r.type==="fusen"){ ps.push(para([{t:"付 ",sz:18,color:FUSEN},{t:r.o,color:FUSEN}])); ps.push(para([{t:"　どう直すか：",sz:18,color:GRAY}])); }
     else if(r.type==="mark"){ ps.push(para([{t:"朱 ",sz:18,color:SHU},{t:r.o,color:SHU}])); ps.push(para([{t:"　直し：",sz:18,color:GRAY}])); }
     else ps.push(para([{t:"覚 "+r.o,sz:18}]));
   });
@@ -898,6 +935,7 @@ function noteTextBody(){
   rows.forEach(r=>{
     if(r.b!==last){ out+="\n【"+(r.b+1)+"区切り目】\n"; last=r.b; }
     if(r.type==="fix") out+="直  "+r.o+"\n →  "+r.n+"\n";
+    else if(r.type==="fusen") out+="付  "+r.o+"\n どう直すか：\n";
     else if(r.type==="mark") out+="朱  "+r.o+"\n 直：\n";
     else out+="覚  "+r.o+"\n";
   });
@@ -908,15 +946,23 @@ function outNoteText(){ saveText(noteTextBody(),cur.title+"_控え_"+stamp()+".t
 /* ============================================================
    画面：控え
    ============================================================ */
+let noteFilter="all";
 function renderNotes(){
   const rows=noteRows();
-  $("n-lead").textContent="直し"+rows.filter(r=>r.type==="fix").length+"件／朱"+rows.filter(r=>r.type==="mark").length+"件／覚え書き"+rows.filter(r=>r.type==="note").length+"件。区切りの順に並びます。行を押すとそこへ飛びます。";
-  $("n-list").innerHTML = rows.length? rows.map(r=>{
-    const head='<em>'+(r.b+1)+'区切り目</em>';
-    if(r.type==="fix") return '<div class="noteitem" data-b="'+r.b+'"><em>'+(r.b+1)+'区切り目・直し</em><span class="old">'+esc(r.o)+'</span><span class="new">'+esc(r.n)+'</span></div>';
-    if(r.type==="mark") return '<div class="noteitem" data-b="'+r.b+'"><em>'+(r.b+1)+'区切り目・朱</em><span>'+esc(r.o)+'</span></div>';
-    return '<div class="noteitem" data-b="'+r.b+'"><em>'+(r.b+1)+'区切り目・覚え書き</em><span>'+esc(r.o)+'</span></div>';
-  }).join("") : '<div class="empty"><b>まだありません</b>読みながら直した行、朱を置いた行、覚え書きがここに並びます。</div>';
+  $("n-lead").textContent="直し"+rowCount(rows,"fix")+"件／付箋"+rowCount(rows,"fusen")+"件／朱"+rowCount(rows,"mark")+"件／覚え書き"+rowCount(rows,"note")+"件。行を押すとそこへ飛びます。";
+  const chips=[["all","ぜんぶ",rows.length],["fusen","付箋",rowCount(rows,"fusen")],["fix","直し",rowCount(rows,"fix")],
+               ["mark","朱",rowCount(rows,"mark")],["note","覚え書き",rowCount(rows,"note")]];
+  $("n-filter").innerHTML=chips.map(c=>'<button class="'+(noteFilter===c[0]?"on":"")+'" data-f="'+c[0]+'">'+c[1]+' '+c[2]+'</button>').join("");
+  $("n-filter").querySelectorAll("button").forEach(b=>b.onclick=()=>{ noteFilter=b.dataset.f; renderNotes(); });
+  const show=noteFilter==="all"?rows:rows.filter(r=>r.type===noteFilter);
+  $("n-list").innerHTML = show.length? show.map(r=>{
+    const h='<em>'+(r.b+1)+'区切り目・'+ROWNAME[r.type]+'</em>';
+    if(r.type==="fix") return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span class="old">'+esc(r.o)+'</span><span class="new">'+esc(r.n)+'</span></div>';
+    if(r.type==="fusen") return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span class="fs">'+esc(r.o)+'</span></div>';
+    return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span>'+esc(r.o)+'</span></div>';
+  }).join("") : (noteFilter==="fusen"
+      ? '<div class="empty"><b>付箋はありません</b>どう直すか決まらない行は、行の右の○を押して付箋を貼っておけます。あとでここに集まります。</div>'
+      : '<div class="empty"><b>まだありません</b>読みながら直した行、朱を置いた行、付箋、覚え書きがここに並びます。</div>');
   $("n-list").querySelectorAll(".noteitem").forEach(el=>el.onclick=()=>openBlock(+el.dataset.b));
   view("notes");
 }
@@ -944,6 +990,9 @@ function renderReport(){
     });
     html+='</tbody></table>';
   });
+  html+='<p class="cat-h">いま残っているもの</p><table class="tally"><tbody>'+
+    '<tr><td>付箋（どう直すか決まっていない行）</td><td class="n">'+fusenTotal()+'</td></tr>'+
+    '<tr><td>朱（直すと決めた行）</td><td class="n">'+markTotal()+'</td></tr></tbody></table>';
   const passes=Object.keys(byPass).sort((a,b)=>a-b);
   html+='<p class="cat-h">通しごとに直した数</p>';
   if(passes.length){
@@ -993,7 +1042,7 @@ function saveConf(){ jset(K_CONF,conf); if(cur){ penCache=readWork(cur,kindOf(cu
    ============================================================ */
 $("ab-body").innerHTML=
  '<p class="lead">推敲は、終わりが見えないから重くなります。この道具は本文を二千字前後の<em>区切り</em>に割って、面付けのマスで残りを見せるだけの器です。</p>'+
- '<p class="cat-h">朱と鉛筆</p><p class="lead"><em>朱</em>は人が置く印。直したい、あとで考える、どちらでも構いません。<em>鉛筆</em>は機械が引く線。字面の規則で拾えるものだけを先に拾ってあります。鉛筆はうるさければ設定で消せます。消しても本文は変わりません。</p>'+
+ '<p class="cat-h">朱と付箋と鉛筆</p><p class="lead"><em>朱</em>は「直す」と決めた行に置く印。<em>付箋</em>は「ここが変だけれど、どう直せばいいか今は分からない」行に貼っておくもの。行の右にある二つの丸を押すだけで付きます。付箋は控えの「付箋」で集めて見返せるので、いま決められないことを抱えたまま先へ進めます。<em>鉛筆</em>は機械が引く線。字面の規則で拾えるものだけを先に拾ってあります。鉛筆はうるさければ設定で消せます。消しても本文は変わりません。</p>'+
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+
  '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、区切りのいいところで書き出して控えを取ってください。</p>';
@@ -1104,10 +1153,10 @@ $("p-start").onclick=()=>{
 
 $("btn-resize").onclick=()=>{
   const now=cur.size||2200;
-  const v=prompt("一区切りの字数を決め直します。\n直した本文はそのまま残りますが、朱・覚え書き・控えの「もと→直し」は消えます。",String(now));
+  const v=prompt("一区切りの字数を決め直します。\n直した本文はそのまま残りますが、朱・付箋・覚え書き・控えの「もと→直し」は消えます。",String(now));
   if(v===null) return;
   const size=Math.max(400,Math.min(8000,parseInt(v,10)||now));
-  if(!confirm("朱・覚え書き・控えの「もと→直し」が消えます。先に控えを書き出しておかなくて大丈夫ですか。")) return;
+  if(!confirm("朱・付箋・覚え書き・控えの「もと→直し」が消えます。先に控えを書き出しておかなくて大丈夫ですか。")) return;
   const text=workText(cur);
   cur.blocks=cutBlocks(text,size); cur.size=size;
   yure=buildYure(cur); penCache=readWork(cur,kindOf(cur.kind).cats);
