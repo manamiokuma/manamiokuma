@@ -214,7 +214,73 @@ run("そのほかのスキルも書き添えられる", () => {
   truthy(t.indexOf("・fanfic-production") >= 0 && t.indexOf("・rework-design") >= 0, "書き足したスキルが出ない");
   ev(`cur.moreSkills = ""; cur.world = "none"; cur.r18 = true`);
 });
+run("同じ段落に続けて貼った付箋は、ひとつづきの相談になる", () => {
+  ev(`cur.blocks[0].fusen = [0, 1]; cur.blocks[0].wide = {on:false, memo:""}`);   /* 一段落目の二文 */
+  const items = ev("talkItems()");
+  eq(items.length, 1, "続きの範囲が一件にまとまらない");
+  eq(items[0].a, 0); eq(items[0].z, 1);
+  const t = ev("talkText()");
+  const 本体 = t.slice(t.indexOf("──── [F1]"));
+  truthy(t.indexOf("1〜2行目") >= 0, "範囲が書かれていない");
+  truthy(t.indexOf("この範囲でひとつづき") >= 0, "ひとつづきだと伝わらない");
+  eq(本体.split("▼ ").length - 1, 2, "範囲の行が全部は出ていない");
+  truthy(本体.indexOf("▼ 　雨が降っていた。") >= 0 && 本体.indexOf("▼ 窓の外は白く煙っている。") >= 0, "範囲の中身が違う");
+});
+run("段落をまたぐと別々の相談になる", () => {
+  ev(`cur.blocks[0].fusen = [1, 3]`);   /* 一段落目の末と、二段落目の頭 */
+  const items = ev("talkItems()");
+  eq(items.length, 2, "段落をまたいでまとめてしまう");
+});
+run("離れた付箋は別々の相談になる", () => {
+  ev(`cur.blocks[0].fusen = [1, 5]`);
+  const items = ev("talkItems()");
+  eq(items.length, 2, "離れているのにまとめてしまう");
+});
+run("区切りまるごとの相談は、全文を添えて出す", () => {
+  ev(`cur.blocks[0].fusen = []; cur.blocks[0].wide = {on:true, memo:"なんとなく変"}`);
+  const items = ev("talkItems()");
+  eq(items.length, 1, "まるごとが一件にならない");
+  eq(items[0].a, -1, "まるごとの印がない");
+  const t = ev("talkText()");
+  truthy(t.indexOf("まるごと ────") >= 0, "まるごとだと分からない");
+  truthy(t.indexOf("どこが悪いか行を特定できていません") >= 0, "特定できていないと伝わらない");
+  truthy(t.indexOf("本文：") >= 0 && t.indexOf("　彼は窓辺に立った。") >= 0, "区切りの全文が入っていない");
+  truthy(t.indexOf("手触り：なんとなく変") >= 0, "手触りが渡らない");
+});
+run("言葉にできていない前提で頼んでいる", () => {
+  const t = ev("talkText()");
+  truthy(t.indexOf("言葉にできていない") >= 0, "曖昧なままでよいと伝わらない");
+  truthy(t.indexOf("勝手に決めつけず") >= 0, "決めつけないよう頼んでいない");
+  truthy(t.indexOf("何が起きているのかを言い当てて") >= 0, "まず言い当ててほしいと頼んでいない");
+});
+run("まるごとの相談にも案が返ってくる", () => {
+  ev("talkText()");
+  const r = ev(`importAdvice(${JSON.stringify("[F1]\n見立て：場面の時間が飛んでいます。\n案：一文足して間を作る。")})`);
+  eq(r.n, 1, "取り込めた件数");
+  truthy(ev("cur.blocks[0].advice.all") !== undefined, "まるごとの置き場に入っていない");
+  ev(`cur.blocks[0].advice = {}; cur.blocks[0].wide = {on:false, memo:""}; cur.blocks[0].fusen = [3]`);
+});
+run("手触りは行の付箋にも付けられる", () => {
+  ev(`cur.blocks[0].fmemo = {3: "重い、視点が動く"}`);
+  truthy(ev("talkText()").indexOf("手触り：重い、視点が動く") >= 0, "行の手触りが渡らない");
+  const rows = ev("noteRows()");
+  truthy(rows.some(r => r.type === "fusen" && r.m === "重い、視点が動く"), "控えに手触りが載らない");
+  truthy(ev("noteTextBody()").indexOf(" 手触り：") >= 0, "控えのテキストに手触りがない");
+});
+run("続きの範囲では、手触りを一度だけ聞く", () => {
+  ev(`cur.blocks[0].fusen = [0, 1]; cur.blocks[0].fmemo = {1: "重い"}`);
+  const t = ev("talkText()");
+  eq(t.split("手触り：").length - 1, 1, "範囲の中で手触りが繰り返されている");
+  truthy(t.indexOf("手触り：重い") >= 0, "範囲のどこに書いても拾えるべき");
+  ev(`cur.blocks[0].fusen = [3]; cur.blocks[0].fmemo = {}`);
+});
+run("札とひとことは混ぜて持てる", () => {
+  eq(ev(`memoTags("重い、なんだか遠い、視点が動く").join("／")`), "重い／視点が動く", "札だけを取り出せない");
+  eq(ev(`memoFree("重い、なんだか遠い、視点が動く")`), "なんだか遠い", "ひとことだけを取り出せない");
+  eq(ev(`memoJoin(["重い"], "なんだか遠い")`), "重い、なんだか遠い");
+});
 run("返事を貼ると番号どおりに案が付く", () => {
+  ev(`cur.blocks[0].fmemo = {}`);
   const 返事 = [
     "承知しました。三件みていきます。",
     "",

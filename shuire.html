@@ -96,13 +96,16 @@
   .look button{font-size:12px;color:var(--enpitsu);white-space:nowrap;border:1px solid var(--ai3);border-radius:2px;padding:5px 9px;background:var(--ai)}
   .text{padding:18px 0 8px}
   .ln{display:flex;align-items:flex-start;gap:2px;border-left:2px solid transparent;border-radius:0 2px 2px 0;transition:background .15s,border-color .15s}
+  .ln{gap:4px;padding-right:2px}
   .ln-t{flex:1;text-align:left;font-family:var(--mincho);font-size:17px;line-height:2.05;letter-spacing:.02em;color:var(--kami);padding:5px 4px 5px 12px;white-space:pre-wrap;word-break:break-word}
-  .ln-s,.ln-f{flex:0 0 auto;align-self:stretch;width:30px;font-size:11.5px;color:#c3ccd4;padding:8px 0 0;font-family:var(--mincho);transition:color .15s}
-  .ln-s:hover,.ln-f:hover{color:var(--dim)}
+  .ln-s,.ln-f{flex:0 0 auto;align-self:flex-start;width:30px;height:30px;margin:6px 0 0;border:1px solid var(--ai3);border-radius:4px;background:#fff;
+    color:#9aabb8;font-size:12px;font-family:var(--mincho);display:flex;align-items:center;justify-content:center;transition:background .15s,color .15s,border-color .15s}
+  .ln-s:hover,.ln-f:hover{border-color:var(--dim);color:var(--kami)}
+  .ln-s:active,.ln-f:active{transform:translateY(1px)}
+  .ln.mk .ln-s{background:var(--shu);border-color:var(--shu);color:#fff}
+  .ln.fs .ln-f{background:var(--fusen);border-color:var(--fusen);color:#fff}
   .ln.mk{border-left-color:var(--shu);background:rgba(198,48,27,.09)}
-  .ln.mk .ln-s{color:var(--shu)}
   .ln.fs{border-left-color:var(--fusen);background:rgba(176,125,18,.11)}
-  .ln.fs .ln-f{color:var(--fusen)}
   .ln.mk.fs{border-left-color:var(--shu)}
   .ln.fx .ln-t{color:var(--sumi)}
   .ln.fx{border-left-color:var(--sumi)}
@@ -114,6 +117,19 @@
   .adv .advrest{font-size:12px;color:var(--dim);line-height:1.8;white-space:pre-wrap;margin:0}
   .pen-msg{font-size:11.5px;color:var(--enpitsu);padding:0 4px 7px 12px;line-height:1.7;border-left:2px solid transparent;margin-top:-4px}
   .pen-msg u{text-decoration:none;border-bottom:1px dotted var(--enpitsu)}
+  .tags{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:2px 4px 10px 12px}
+  .tag{font-size:11px;border:1px solid var(--ai3);border-radius:12px;padding:4px 9px;color:var(--dim);background:var(--ai)}
+  .tag:hover{border-color:var(--dim);color:var(--kami)}
+  .tag.on{border-color:var(--fusen);background:rgba(176,125,18,.17);color:var(--fusen)}
+  .tagfree{flex:1 1 130px;min-width:110px;font-size:12.5px;border:none;border-bottom:1px solid var(--ai3);background:none;color:var(--kami);padding:5px 2px;font-family:var(--gothic)}
+  .tagfree::placeholder{color:#a3b1bd}
+  .tagfree:focus{outline:none;border-bottom-color:var(--fusen)}
+  .wide{margin:16px 0 0;border:1px solid var(--ai3);border-radius:3px;padding:4px}
+  .wide.on{border-color:var(--fusen);background:rgba(176,125,18,.09)}
+  .widebtn{display:block;width:100%;text-align:left;font-size:13px;color:var(--dim);padding:11px 10px;line-height:1.6}
+  .wide.on .widebtn{color:var(--fusen)}
+  .wide .tags{padding:0 6px 8px}
+  .wide .adv-msg{padding:0 6px 8px}
   .lnhold{margin-bottom:1px}
   .lnhold.pen .ln-t{background:linear-gradient(transparent 82%, rgba(123,143,163,.35) 82%)}
   .lngap{height:22px}
@@ -243,6 +259,7 @@
     <div class="look"><em id="r-look"></em><button id="r-nextpen">鉛筆へ</button></div>
     <div style="padding:0 18px" class="r-body">
       <div class="text" id="r-text"></div>
+      <div id="r-wide-box"></div>
       <div class="memo">
         <h3>この区切りについて、覚えておきたいこと</h3>
         <textarea id="r-memo" placeholder="例：三章の呼称ゆれ／ここの語尾が重い"></textarea>
@@ -415,9 +432,9 @@ function cutBlocks(text,size){
   const out=[];
   sections(t).forEach(sec=>{
     const h=isHead(sec.split("\n")[0]||"");
-    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},head:bi===0&&h}));
+    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},fmemo:{},wide:{on:false,memo:""},head:bi===0&&h}));
   });
-  return out.length?out:[{t:t,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},head:false}];
+  return out.length?out:[{t:t,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},fmemo:{},wide:{on:false,memo:""},head:false}];
 }
 
 /* ---------- 一区切りを一文ずつに割る（null＝改行） ---------- */
@@ -640,13 +657,14 @@ function migrate(w){
     w.blocks=old.map((t,i)=>({t:t,done:!!(w.done&&w.done[i]),note:(w.notes&&w.notes[i])||"",marks:(w.marks&&w.marks[i])||[],edits:{},head:false}));
     delete w.done; delete w.notes; delete w.marks;
   }
-  w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.advice=b.advice||{}; b.note=b.note||""; });
+  w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.advice=b.advice||{};
+    b.fmemo=b.fmemo||{}; b.wide=b.wide||{on:false,memo:""}; b.note=b.note||""; });
   w.pass=w.pass||1; w.kind=w.kind||"typo"; w.log=w.log||[]; w.history=w.history||[]; w.v=2;
   if(w.world===undefined){ w.world="none"; w.r18=true; w.moreSkills=""; }   /* R18は既定で入っている前提 */
 }
 function firstUndone(){ for(let i=0;i<cur.blocks.length;i++) if(!cur.blocks[i].done) return i; return -1; }
 function markTotal(){ return cur.blocks.reduce((a,b)=>a+b.marks.length,0); }
-function fusenTotal(){ return cur.blocks.reduce((a,b)=>a+(b.fusen?b.fusen.length:0),0); }
+function fusenTotal(){ return itemTotal(); }
 function fixTotal(){ return cur.blocks.reduce((a,b)=>a+Object.keys(b.edits).length,0); }
 function penTotal(){ return penCache.reduce((a,m)=>a+penCount(m),0); }
 
@@ -662,7 +680,7 @@ function renderWork(){
   $("w-sheet").className="sheet";
   $("w-sheet").innerHTML=cur.blocks.map((b,i)=>{
     const p=penCount(penCache[i]||{});
-    return '<button class="cell '+(b.done?"done":"")+' '+(i===firstUndone()?"next":"")+' '+(b.head?"head":"")+' '+((b.fusen&&b.fusen.length)?"fusen":"")+'" data-i="'+i+'">'+(i+1)+
+    return '<button class="cell '+(b.done?"done":"")+' '+(i===firstUndone()?"next":"")+' '+(b.head?"head":"")+' '+(((b.fusen&&b.fusen.length)||(b.wide&&b.wide.on))?"fusen":"")+'" data-i="'+i+'">'+(i+1)+
       (p&&!b.done?'<span class="pen">'+(p>9?"＋":p)+'</span>':'')+'</button>';
   }).join("");
   $("w-sheet").querySelectorAll(".cell").forEach(c=>c.onclick=()=>openBlock(+c.dataset.i));
@@ -712,6 +730,7 @@ function openBlock(i){
       '<button class="ln-t" data-k="'+k+'">'+esc(t)+'</button>'+
       '<button class="ln-s" data-s="'+k+'" aria-label="朱を置く">朱</button>'+
       '<button class="ln-f" data-f="'+k+'" aria-label="付箋を貼る">付</button></div>'+
+      ((fs&&b.fusen.indexOf(k+1)<0)?memoRow(k,b.fmemo[k]):"")+
       (b.advice[k]?'<button class="adv-msg" data-a="'+k+'">Claudeの案 '+(advCands(b.advice[k]).length||1)+'件　押して開く</button>':'')+
       (pe?'<div class="pen-msg">'+pe.map(x=>'<u>'+esc(x.msg)+'</u>').join("　")+'</div>':'')+'</div>';
   }).join("");
@@ -719,14 +738,68 @@ function openBlock(i){
   $("r-text").querySelectorAll(".ln-s").forEach(el=>el.onclick=()=>toggleMark(+el.dataset.s));
   $("r-text").querySelectorAll(".ln-f").forEach(el=>el.onclick=()=>toggleFusen(+el.dataset.f));
   $("r-text").querySelectorAll(".adv-msg").forEach(el=>el.onclick=()=>openSheet(+el.dataset.a));
+  wireMemoRows($("r-text"));
+  renderWideBox();
   showLen();
   $("r-memo").value=b.note||"";
   $("r-done").textContent = b.done? "読み終えた印を消す" : "朱を入れ終えた";
   view("read");
 }
+/* 付箋のコメント。押すだけの札と、ひとこと。key は行番号か "wide" */
+function memoRow(key,val){
+  const tags=memoTags(val);
+  return '<div class="tags" data-m="'+key+'">'+
+    TOUCH.map(t=>'<button class="tag'+(tags.indexOf(t)>=0?" on":"")+'" data-t="'+esc(t)+'">'+esc(t)+'</button>').join("")+
+    '<input class="tagfree" value="'+esc(memoFree(val))+'" placeholder="ひとこと（任意）">'+
+    '</div>';
+}
+function getMemo(key){ const b=cur.blocks[pos]; return key==="wide"?(b.wide.memo||""):(b.fmemo[key]||""); }
+function setMemo(key,v){
+  const b=cur.blocks[pos];
+  if(key==="wide") b.wide.memo=v; else if(v) b.fmemo[key]=v; else delete b.fmemo[key];
+  saveWork();
+}
+function wireMemoRows(root){
+  root.querySelectorAll(".tags").forEach(row=>{
+    const key=row.dataset.m;
+    row.querySelectorAll(".tag").forEach(el=>el.onclick=()=>{
+      const now=getMemo(key), tags=memoTags(now), t=el.dataset.t, i=tags.indexOf(t);
+      if(i>=0) tags.splice(i,1); else tags.push(t);
+      setMemo(key,memoJoin(tags,memoFree(now)));
+      el.classList.toggle("on",i<0);
+    });
+    const inp=row.querySelector(".tagfree");
+    inp.onchange=()=>{ const now=getMemo(key); setMemo(key,memoJoin(memoTags(now),inp.value.trim().replace(/[、,]/g,"／"))); };
+  });
+}
+function renderWideBox(){
+  const b=cur.blocks[pos], on=b.wide.on, adv=b.advice.all;
+  $("r-wide-box").innerHTML='<div class="wide'+(on?" on":"")+'">'+
+    '<button class="widebtn" id="r-wide">'+(on?"この区切りまるごとの付箋をはがす":"どこが変か分からない — この区切りごと相談する")+'</button>'+
+    (on?memoRow("wide",b.wide.memo):"")+
+    (on&&adv?'<button class="adv-msg" data-a="all">Claudeの案　押して読む</button>':'')+
+    '</div>';
+  $("r-wide").onclick=()=>{
+    b.wide.on=!b.wide.on; saveWork(true); renderWideBox(); showLen();
+    toast(b.wide.on?"この区切りごと相談する付箋を貼りました":"まるごとの付箋をはがしました");
+  };
+  wireMemoRows($("r-wide-box"));
+  const a=$("r-wide-box").querySelector(".adv-msg");
+  if(a) a.onclick=openWideSheet;
+}
+function openWideSheet(){
+  const b=cur.blocks[pos];
+  $("card").innerHTML='<h3>'+(pos+1)+'区切り目　まるごとの相談</h3>'+
+    '<div class="adv"><b>Claudeの案</b><p class="advrest">'+esc(b.advice.all||"")+'</p>'+
+    '<button class="advrest" id="sh-advdel" style="margin-top:8px;text-decoration:underline">この案を消す</button></div>'+
+    '<div class="row"><button class="go quiet" id="sh-close">閉じる</button></div>';
+  $("veil").classList.remove("hide");
+  $("sh-advdel").onclick=()=>{ delete b.advice.all; saveWork(true); closeSheet(); openBlock(pos); };
+  $("sh-close").onclick=closeSheet;
+}
 function showLen(){
   const b=cur.blocks[pos];
-  const n=b.marks.length, g=b.fusen.length, f=Object.keys(b.edits).length;
+  const n=b.marks.length, g=blockItems(b,pos).length, f=Object.keys(b.edits).length;
   $("r-len").textContent=blockText(b).length+"字"+(n?"・朱"+n:"")+(g?"・付"+g:"")+(f?"・直"+f:"");
 }
 function refreshBlockPen(){
@@ -742,11 +815,22 @@ function toggleMark(k){
 /* 付箋＝直したいが、どう直すかまだ決まっていない行 */
 function toggleFusen(k){
   const b=cur.blocks[pos], j=b.fusen.indexOf(k);
-  if(j>=0) b.fusen.splice(j,1); else { b.fusen.push(k); b.fusen.sort((x,y)=>x-y); }
+  if(j>=0){ b.fusen.splice(j,1); delete b.fmemo[k]; }
+  else { b.fusen.push(k); b.fusen.sort((x,y)=>x-y); }
   const hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
   if(hold) hold.querySelector(".ln").classList.toggle("fs",j<0);
+  syncMemoRow(k-1); syncMemoRow(k);   /* 続きの範囲では、札は範囲の終わりに一度だけ */
   showLen(); saveWork();
-  toast(j>=0?"付箋をはがしました":"付箋を貼りました　あとで控えから戻れます");
+  if(j<0) toast("付箋を貼りました　ひとこと足せます（なくても構いません）");
+}
+/* その行に札を出すべきか。範囲の途中なら出さない */
+function syncMemoRow(k){
+  if(k<0) return;
+  const b=cur.blocks[pos], hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
+  if(!hold) return;
+  const want=b.fusen.indexOf(k)>=0 && b.fusen.indexOf(k+1)<0, now=hold.querySelector(".tags");
+  if(want&&!now){ hold.querySelector(".ln").insertAdjacentHTML("afterend",memoRow(k,b.fmemo[k])); wireMemoRows(hold); }
+  else if(!want&&now) now.remove();
 }
 function saveMemo(){
   const b=cur.blocks[pos], v=$("r-memo").value.trim();
@@ -949,9 +1033,10 @@ function noteRows(){
     ks.forEach(k=>{
       const fixed=b.edits[k]!==undefined;
       if(fixed) rows.push({b:i,k:k,type:"fix",o:ls[k],n:b.edits[k]});
-      if(b.fusen.indexOf(k)>=0) rows.push({b:i,k:k,type:"fusen",o:lineText(b,ls,k),a:b.advice[k]||""});
+      if(b.fusen.indexOf(k)>=0) rows.push({b:i,k:k,type:"fusen",o:lineText(b,ls,k),a:b.advice[k]||"",m:(b.fmemo[k]||"").trim()});
       if(b.marks.indexOf(k)>=0 && !fixed) rows.push({b:i,k:k,type:"mark",o:lineText(b,ls,k)});
     });
+    if(b.wide&&b.wide.on) rows.push({b:i,k:-2,type:"fusen",o:"（この区切りまるごと）",a:b.advice.all||"",m:(b.wide.memo||"").trim()});
     if(b.note.trim()) rows.push({b:i,k:-1,type:"note",o:b.note.trim()});
   });
   return rows.sort((a,c)=>a.b-c.b||a.k-c.k);
@@ -967,6 +1052,7 @@ function outNoteDocx(){
     if(r.b!==last){ ps.push(para([{t:(r.b+1)+"区切り目",b:true,sz:21}],true)); last=r.b; }
     if(r.type==="fix"){ ps.push(para([{t:"　",sz:18},{t:r.o,st:true,color:GRAY}])); ps.push(para([{t:"→ ",sz:18},{t:r.n,color:SUMI}])); }
     else if(r.type==="fusen"){ ps.push(para([{t:"付 ",sz:18,color:FUSEN},{t:r.o,color:FUSEN}]));
+      if(r.m) ps.push(para([{t:"　手触り："+r.m,sz:18,color:GRAY}]));
       if(r.a) advCands(r.a).forEach(c=>ps.push(para([{t:"　案："+c,sz:18,color:GRAY}])));
       ps.push(para([{t:"　どう直すか：",sz:18,color:GRAY}])); }
     else if(r.type==="mark"){ ps.push(para([{t:"朱 ",sz:18,color:SHU},{t:r.o,color:SHU}])); ps.push(para([{t:"　直し：",sz:18,color:GRAY}])); }
@@ -980,7 +1066,8 @@ function noteTextBody(){
   rows.forEach(r=>{
     if(r.b!==last){ out+="\n【"+(r.b+1)+"区切り目】\n"; last=r.b; }
     if(r.type==="fix") out+="直  "+r.o+"\n →  "+r.n+"\n";
-    else if(r.type==="fusen"){ out+="付  "+r.o+"\n"; if(r.a) advCands(r.a).forEach(c=>out+=" 案："+c+"\n"); out+=" どう直すか：\n"; }
+    else if(r.type==="fusen"){ out+="付  "+r.o+"\n"; if(r.m) out+=" 手触り："+r.m+"\n";
+      if(r.a) advCands(r.a).forEach(c=>out+=" 案："+c+"\n"); out+=" どう直すか：\n"; }
     else if(r.type==="mark") out+="朱  "+r.o+"\n 直：\n";
     else out+="覚  "+r.o+"\n";
   });
@@ -1022,10 +1109,36 @@ function talkSkills(){
   String(cur.moreSkills||"").split(/[、,\s]+/).forEach(k=>{ k=k.trim(); if(k) out.push({n:k,why:""}); });
   return out;
 }
-function fusenList(){
+/* 相談の単位。続けて貼った付箋はひと続きの相談として扱う。
+   a===-1 は「区切りまるごと（どこが悪いか行を特定できていない）」 */
+function blockItems(b,i){
   const out=[];
-  cur.blocks.forEach((b,i)=>(b.fusen||[]).slice().sort((a,c)=>a-c).forEach(k=>out.push({b:i,k:k})));
+  if(b.wide&&b.wide.on) out.push({b:i,a:-1,z:-1});
+  const f=(b.fusen||[]).slice().sort((x,y)=>x-y);
+  let st=null,pv=null;
+  f.forEach(k=>{
+    if(st===null){ st=k; pv=k; return; }
+    if(k===pv+1){ pv=k; return; }
+    out.push({b:i,a:st,z:pv}); st=k; pv=k;
+  });
+  if(st!==null) out.push({b:i,a:st,z:pv});
   return out;
+}
+function talkItems(){ const out=[]; cur.blocks.forEach((b,i)=>blockItems(b,i).forEach(x=>out.push(x))); return out; }
+function itemTotal(){ return cur.blocks.reduce((a,b,i)=>a+blockItems(b,i).length,0); }
+const advKey=it=>it.a<0?"all":it.a;
+/* 手触りの一言。押すだけの札と、書き足したぶん */
+const TOUCH=["なんとなく変","重い","説明しすぎ","間が悪い","視点が動く","声じゃない","言葉が浮く"];
+function memoParts(x){ return String(x||"").split(/[、,]/).map(y=>y.trim()).filter(Boolean); }
+function memoTags(x){ return memoParts(x).filter(y=>TOUCH.indexOf(y)>=0); }
+function memoFree(x){ return memoParts(x).filter(y=>TOUCH.indexOf(y)<0).join("、"); }
+function memoJoin(tags,free){ return tags.concat(free?[free]:[]).join("、"); }
+function itemMemo(it){
+  const b=cur.blocks[it.b];
+  if(it.a<0) return (b.wide.memo||"").trim();
+  const out=[];
+  for(let k=it.a;k<=it.z;k++) memoParts(b.fmemo[k]).forEach(x=>{ if(out.indexOf(x)<0) out.push(x); });
+  return out.join("、");
 }
 function ctxLines(b,ls,k,n){
   const out=[], step=n<0?-1:1, want=Math.abs(n);
@@ -1036,7 +1149,7 @@ function ctxLines(b,ls,k,n){
   return n<0?out.reverse():out;
 }
 function talkText(){
-  const list=fusenList();
+  const list=talkItems();
   let out="# 朱入れ　相談票\n";
   out+="作品：「"+cur.title+"」　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）　"+jdate()+"\n";
   out+="付箋："+list.length+"件\n\n";
@@ -1047,24 +1160,38 @@ function talkText(){
   out+="文体・呼称・口調・世界観の裁定は、記憶ではなく上のスキルに従ってください。\n\n";
   out+="【お願いすること】\n";
   out+="これは推敲中の小説の原稿です。下に並ぶのは、書き手が「ここが引っかかるけれど、\n";
-  out+="どう直せばいいか決まらない」と付箋を貼った行です。\n";
-  out+="一件ずつ、(1)何が引っかかっているのかの見立て、(2)直しの案を二つ以上、\n";
+  out+="どう直せばいいか決まらない」と付箋を貼ったところです。\n";
+  out+="書き手は変だと感じているだけで、何が起きているのかは言葉にできていないことが\n";
+  out+="多いです。「手触り」の一言がある場合はそれを手がかりに、無い場合は勝手に決めつけず、\n";
+  out+="まず何が起きているのかを言い当ててから直しの案を出してください。\n";
+  out+="一件ずつ、(1)何が起きているのかの見立て、(2)直しの案を二つ以上、\n";
   out+="原文の文体・語彙・視点を保ったまま出してください。\n";
-  out+="「前」「後」は文脈です。直すのは ▼ の行だけにしてください。\n";
+  out+="「前」「後」は文脈です。直すのは ▼ のところだけにしてください。\n";
+  out+="▼ が続けて何行かあるものは、その範囲ぜんぶで一つの相談です。\n";
+  out+="「まるごと」は、どこが悪いか行を特定できていないという意味です。まずどこが\n";
+  out+="原因かを指してから、案を出してください。\n";
   out+="いまは「"+kindOf(cur.kind).name+"」の通しです（"+kindOf(cur.kind).look+"）。\n\n";
   out+="返事は次の形でお願いします。この形なら、そのまま朱入れに取り込めます。\n\n";
   out+="[F1]\n見立て：（一行で）\n案：（直した一文をそのまま。前後の行は書かない）\n案：（別の直しかた）\n\n";
   if(!list.length) out+="（付箋がありません）\n";
   list.forEach((t,i)=>{
-    const b=cur.blocks[t.b], ls=lines(b.t);
-    out+="──── [F"+(i+1)+"] "+(t.b+1)+"区切り目 "+(t.k+1)+"行目 ────\n";
-    ctxLines(b,ls,t.k,-2).forEach(x=>out+="前："+x+"\n");
-    out+="▼ "+lineText(b,ls,t.k)+"\n";
-    ctxLines(b,ls,t.k,2).forEach(x=>out+="後："+x+"\n");
+    const b=cur.blocks[t.b], ls=lines(b.t), memo=itemMemo(t);
+    if(t.a<0){
+      out+="──── [F"+(i+1)+"] "+(t.b+1)+"区切り目　まるごと ────\n";
+      out+="（どこが悪いか行を特定できていません。まずどこが原因かを指してください）\n";
+      out+="本文：\n"+blockText(b)+"\n";
+    }else{
+      const many=t.z>t.a;
+      out+="──── [F"+(i+1)+"] "+(t.b+1)+"区切り目 "+(t.a+1)+(many?"〜"+(t.z+1):"")+"行目"+(many?"　この範囲でひとつづき":"")+" ────\n";
+      ctxLines(b,ls,t.a,-2).forEach(x=>out+="前："+x+"\n");
+      for(let k=t.a;k<=t.z;k++){ if(ls[k]!==null) out+="▼ "+lineText(b,ls,k)+"\n"; }
+      ctxLines(b,ls,t.z,2).forEach(x=>out+="後："+x+"\n");
+    }
+    if(memo) out+="手触り："+memo+"\n";
     if(b.note.trim() && (i===0||list[i-1].b!==t.b)) out+="この区切りの覚え書き："+b.note.trim()+"\n";
     out+="\n";
   });
-  cur.talk={at:Date.now(),keys:list.map(t=>[t.b,t.k])};   /* 番号の対応を控えておく */
+  cur.talk={at:Date.now(),keys:list.map(t=>[t.b,t.a])};   /* 番号の対応を控えておく */
   saveWork(true);
   return out;
 }
@@ -1076,13 +1203,13 @@ function importAdvice(raw){
   const marks=[]; let m;
   while((m=re.exec(txt))) marks.push({n:parseInt(han(m[1]),10),end:re.lastIndex,at:m.index});
   if(!marks.length) return {n:0,miss:0};
-  const keys=(cur.talk&&cur.talk.keys&&cur.talk.keys.length)?cur.talk.keys.map(a=>({b:a[0],k:a[1]})):fusenList();
+  const keys=(cur.talk&&cur.talk.keys&&cur.talk.keys.length)?cur.talk.keys.map(a=>({b:a[0],a:a[1]})):talkItems();
   let n=0, miss=0;
   marks.forEach((mk,i)=>{
     const body=txt.slice(mk.end,i+1<marks.length?marks[i+1].at:txt.length).replace(/^[\s　:：]+/,"").trim();
     const t=keys[mk.n-1];
     if(!t||!body||!cur.blocks[t.b]){ miss++; return; }
-    cur.blocks[t.b].advice[t.k]=body; n++;
+    cur.blocks[t.b].advice[advKey(t)]=body; n++;
   });
   saveWork(true);
   return {n:n,miss:miss};
@@ -1098,7 +1225,7 @@ function advCands(text){
   return out;
 }
 function renderTalk(){
-  const list=fusenList();
+  const list=talkItems();
   const w=worldOf(cur.world);
   $("t-world").innerHTML=WORLDS.map(x=>'<option value="'+x.id+'"'+(x.id===cur.world?" selected":"")+'>'+esc(x.name)+'</option>').join("");
   $("t-r18").classList.toggle("on",!!cur.r18&&!w.noR18);
@@ -1106,7 +1233,7 @@ function renderTalk(){
   $("t-more").value=cur.moreSkills||"";
   $("t-skills").textContent="開いてもらうもの："+talkSkills().map(x=>x.n).join("、")+(w.note?"　／　"+w.note:"");
   $("t-lead").textContent = list.length
-    ? "付箋が"+list.length+"件あります。相談票には、その行と前後二文ずつ、区切りの覚え書きが入ります。およそ"+talkLen(list)+"字。"
+    ? "相談が"+list.length+"件あります。続けて貼った付箋はひとつづきの相談に、まるごとの付箋は区切りの全文を添えて渡します。およそ"+talkLen(list)+"字。"
     : "付箋がありません。読みながら行の右の「付」を押すと、ここに集まります。";
   $("t-copy").classList.toggle("hide",!list.length);
   $("t-save").classList.toggle("hide",!list.length);
@@ -1114,9 +1241,11 @@ function renderTalk(){
   view("talk");
 }
 function talkLen(list){
-  let n=520;
+  let n=760;
   list.forEach(t=>{ const b=cur.blocks[t.b], ls=lines(b.t);
-    n+=lineText(b,ls,t.k).length+ctxLines(b,ls,t.k,-2).join("").length+ctxLines(b,ls,t.k,2).join("").length+40; });
+    if(t.a<0){ n+=b.t.length+60; return; }
+    for(let k=t.a;k<=t.z;k++) if(ls[k]!==null) n+=lineText(b,ls,k).length;
+    n+=ctxLines(b,ls,t.a,-2).join("").length+ctxLines(b,ls,t.z,2).join("").length+50; });
   return n.toLocaleString();
 }
 
@@ -1135,7 +1264,7 @@ function renderNotes(){
   $("n-list").innerHTML = show.length? show.map(r=>{
     const h='<em>'+(r.b+1)+'区切り目・'+ROWNAME[r.type]+'</em>';
     if(r.type==="fix") return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span class="old">'+esc(r.o)+'</span><span class="new">'+esc(r.n)+'</span></div>';
-    if(r.type==="fusen") return '<div class="noteitem" data-b="'+r.b+'"><em>'+(r.b+1)+'区切り目・付箋'+(r.a?"・案あり":"")+'</em><span class="fs">'+esc(r.o)+'</span></div>';
+    if(r.type==="fusen") return '<div class="noteitem" data-b="'+r.b+'"><em>'+(r.b+1)+'区切り目・付箋'+(r.m?"・"+esc(r.m):"")+(r.a?"・案あり":"")+'</em><span class="fs">'+esc(r.o)+'</span></div>';
     return '<div class="noteitem" data-b="'+r.b+'">'+h+'<span>'+esc(r.o)+'</span></div>';
   }).join("") : (noteFilter==="fusen"
       ? '<div class="empty"><b>付箋はありません</b>どう直すか決まらない行は、行の右の○を押して付箋を貼っておけます。あとでここに集まります。</div>'
@@ -1168,7 +1297,7 @@ function renderReport(){
     html+='</tbody></table>';
   });
   html+='<p class="cat-h">いま残っているもの</p><table class="tally"><tbody>'+
-    '<tr><td>付箋（どう直すか決まっていない行）</td><td class="n">'+fusenTotal()+'</td></tr>'+
+    '<tr><td>付箋（どう直すか決まっていないところ）</td><td class="n">'+itemTotal()+'</td></tr>'+
     '<tr><td>朱（直すと決めた行）</td><td class="n">'+markTotal()+'</td></tr></tbody></table>';
   const passes=Object.keys(byPass).sort((a,b)=>a-b);
   html+='<p class="cat-h">通しごとに直した数</p>';
@@ -1219,7 +1348,7 @@ function saveConf(){ jset(K_CONF,conf); if(cur){ penCache=readWork(cur,kindOf(cu
    ============================================================ */
 $("ab-body").innerHTML=
  '<p class="lead">推敲は、終わりが見えないから重くなります。この道具は本文を二千字前後の<em>区切り</em>に割って、面付けのマスで残りを見せるだけの器です。</p>'+
- '<p class="cat-h">朱と付箋と鉛筆</p><p class="lead"><em>朱</em>は「直す」と決めた行に置く印。<em>付箋</em>は「ここが変だけれど、どう直せばいいか今は分からない」行に貼っておくもの。行の右にある二つの丸を押すだけで付きます。付箋は控えの「付箋」で集めて見返せるので、いま決められないことを抱えたまま先へ進めます。<em>鉛筆</em>は機械が引く線。字面の規則で拾えるものだけを先に拾ってあります。鉛筆はうるさければ設定で消せます。消しても本文は変わりません。</p>'+
+ '<p class="cat-h">朱と付箋と鉛筆</p><p class="lead"><em>朱</em>は「直す」と決めた行に置く印。<em>付箋</em>は「ここが変だけれど、どう直せばいいか今は分からない」ところに貼っておくもの。行の右の二つのボタンを押すだけで付きます。貼るとその場に「なんとなく変」「重い」などの札とひとこと欄が出るので、言葉になっていれば足しておけます（なくても構いません）。続けて何行かに貼れば、その範囲でひとつづきの相談になります。どこが変か行を指せないときは、本文の下の<em>この区切りごと相談する</em>で、区切りまるごとを相談に出せます。付箋は控えの「付箋」で集めて見返せるので、いま決められないことを抱えたまま先へ進めます。<em>鉛筆</em>は機械が引く線。字面の規則で拾えるものだけを先に拾ってあります。鉛筆はうるさければ設定で消せます。消しても本文は変わりません。</p>'+
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
  '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。相談の画面で作品の世界を選んでおくと、票の頭に「先に開いてほしいスキル」（文体の正本、その作品の設定の正本、R18の様式）が並ぶので、Claudeは記憶ではなく正本を見て答えます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+

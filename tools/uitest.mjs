@@ -75,6 +75,57 @@ await step("付箋をボタン一つで貼る／はがす", async () => {
   must(await p.locator(".ln.fs").count() === 0, "付箋がはがれない");
   await p.locator(".ln-f").nth(2).click();
 });
+await step("印がボタンらしく見える", async () => {
+  const off = await p.locator(".ln-s").first().evaluate(el => getComputedStyle(el).borderStyle + " " + getComputedStyle(el).backgroundColor);
+  must(off.startsWith("solid"), "枠がない: " + off);
+  await p.locator(".ln-s").nth(0).click();
+  await p.waitForTimeout(300);            /* 色が変わりきるのを待つ */
+  const on = await p.locator(".ln-s").first().evaluate(el => getComputedStyle(el).backgroundColor);
+  must(on === "rgb(198, 48, 27)", "押しても朱色にならない: " + on);
+  await p.locator(".ln-s").nth(0).click();
+  await p.waitForTimeout(300);
+  must(await p.locator(".ln.mk").count() === 0, "もう一度押しても外れない");
+});
+await step("付箋を貼るとその場でひとこと足せる", async () => {
+  const rows = await p.locator(".tags").count();
+  must(rows === 1, "付箋の下にコメント欄が出ない（" + rows + "）");
+  await p.locator(".tags .tag", { hasText: "重い" }).first().click();
+  must(await p.locator(".tags .tag.on").count() === 1, "札が点かない");
+  await p.locator(".tags .tagfree").first().fill("なんだか遠い");
+  await p.locator(".tags .tagfree").first().blur();
+});
+await step("続けて貼っても、ひとこと欄は範囲にひとつ", async () => {
+  await p.locator(".ln-f").nth(1).click();          /* 同じ段落の隣の文に貼って範囲にする */
+  const n = await p.locator(".tags").count();
+  must(n === 1, "範囲の中でひとこと欄が増えている（" + n + "）");
+  must((await p.textContent("#r-len")).includes("付1"), "範囲がひとつの相談になっていない: " + (await p.textContent("#r-len")));
+  must(await p.locator(".ln.fs").count() === 2, "二行に付いていない");
+  await p.locator(".ln-f").nth(1).click();          /* 戻す */
+  must(await p.locator(".tags").count() === 1, "はがしたあとにひとこと欄が消えた");
+  must((await p.locator(".tags .tag.on").count()) === 1, "札が消えた");
+});
+await step("段落をまたぐと別々の相談になる", async () => {
+  await p.locator(".ln-f").nth(3).click();          /* 段落をまたいだ先の文 */
+  must(await p.locator(".tags").count() === 2, "段落をまたいでひとつにまとめてしまう");
+  must((await p.textContent("#r-len")).includes("付2"), "別々の相談になっていない: " + (await p.textContent("#r-len")));
+  await p.locator(".ln-f").nth(3).click();
+});
+await step("ひとことは読み込み直しても残る", async () => {
+  await p.click("#r-back");
+  await p.reload();
+  await p.locator(".work").first().click();
+  await p.click("#btn-go");
+  must(await p.locator(".tags .tag.on").count() === 1, "札が残らない");
+  must((await p.locator(".tags .tagfree").first().inputValue()) === "なんだか遠い", "ひとことが残らない");
+});
+await step("どこが変か分からないときは区切りごと相談できる", async () => {
+  must(await p.locator("#r-wide").isVisible(), "まるごとのボタンがない");
+  await p.click("#r-wide");
+  must(await p.locator(".wide.on").count() === 1, "まるごとの付箋が付かない");
+  must(await p.locator(".wide .tags").count() === 1, "まるごとにもひとこと欄が出ない");
+  await p.locator(".wide .tag", { hasText: "なんとなく変" }).first().click();
+  must((await p.textContent("#r-len")).includes("付2"), "相談の数が増えない: " + (await p.textContent("#r-len")));
+});
 await step("朱と付箋は別々に付く", async () => {
   await p.locator(".ln-s").nth(3).click();
   must(await p.locator(".ln.fs").count() === 1, "付箋が消えた");
@@ -125,7 +176,7 @@ await step("控えに直しと付箋と覚え書きが並ぶ", async () => {
 await step("付箋だけに絞れる", async () => {
   await p.locator('#n-filter button[data-f="fusen"]').click();
   const items = await p.locator(".noteitem").count();
-  must(items === 1, "付箋だけにならない（" + items + "件）");
+  must(items === 2, "付箋だけにならない（" + items + "件）");
   must((await p.textContent(".noteitem em")).includes("付箋"), "付箋以外が混じっている");
 });
 await step("控えから元の区切りへ戻れる", async () => {
@@ -140,7 +191,7 @@ await step("控えから元の区切りへ戻れる", async () => {
 await step("相談票を書き出せる", async () => {
   await p.click("#btn-talk");
   must(await vis("talk"), "相談の画面が開かない");
-  must((await p.textContent("#t-lead")).includes("1件"), "付箋の数が出ない");
+  must((await p.textContent("#t-lead")).includes("2件"), "相談の数が出ない: " + (await p.textContent("#t-lead")));
   const dl = p.waitForEvent("download");
   await p.click("#t-save");
   const d = await dl;
@@ -148,6 +199,10 @@ await step("相談票を書き出せる", async () => {
   let body = ""; for await (const c of st) body += c;
   must(body.includes("[F1]"), "番号がない");
   must(body.includes("・writing-style"), "文体の正本が挙がっていない");
+  must(body.includes("まるごと ────"), "まるごとの相談が入っていない");
+  must(body.includes("手触り：なんとなく変"), "まるごとの手触りが渡らない");
+  must(body.includes("手触り：重い、なんだか遠い"), "行の手触りが渡らない: ");
+  must(body.includes("言葉にできていない"), "曖昧なままでよいと伝えていない");
   must(body.includes("▼ 窓の外は白く煙って"), "相談する行がない");
   must(body.includes("前：　雨が降りつづいていた。"), "前の行が直したあとの本文になっていない");
   must(body.includes("案："), "返事の形が書かれていない");
@@ -176,9 +231,13 @@ await step("見取りは読み込み直しても残る", async () => {
 });
 await step("Claudeの返事を貼ると案が付く", async () => {
   await p.fill("#t-in", [
-    "三件みていきます。",
+    "二件みていきます。",
     "",
     "[F1]",
+    "見立て：この区切りは時間が飛んでいて、読者が置いていかれます。",
+    "案：朝が来る前にひと呼吸おく。",
+    "",
+    "[F2]",
     "見立て：情景が長く、視点が動きすぎています。",
     "案：窓の外は白く煙っていた。",
     "案：窓の外は、白く煙っている。",
@@ -188,13 +247,20 @@ await step("Claudeの返事を貼ると案が付く", async () => {
   await p.click("#t-import");
   must(await vis("work"), "作品画面に戻らない");
 });
-await step("案が届いた行に印が出る", async () => {
+await step("案が届いたところに印が出る", async () => {
   await p.click("#btn-go");
-  must(await p.locator(".adv-msg").count() === 1, "案の印が出ない");
-  must((await p.textContent(".adv-msg")).includes("2件"), "案の数が出ない: " + (await p.textContent(".adv-msg")));
+  must(await p.locator(".lnhold .adv-msg").count() === 1, "行の案の印が出ない");
+  must(await p.locator(".wide .adv-msg").count() === 1, "まるごとの案の印が出ない");
+  must((await p.textContent(".lnhold .adv-msg")).includes("2件"), "案の数が出ない: " + (await p.textContent(".lnhold .adv-msg")));
+});
+await step("まるごとの案は読める形で開く", async () => {
+  await p.click(".wide .adv-msg");
+  must(await p.locator("#veil").isVisible(), "開かない");
+  must((await p.textContent(".advrest")).includes("時間が飛んでいて"), "中身が違う");
+  await p.click("#sh-close");
 });
 await step("案を押すと直しの欄に入る", async () => {
-  await p.click(".adv-msg");
+  await p.click(".lnhold .adv-msg");
   must(await p.locator("#veil").isVisible(), "シートが開かない");
   const cands = await p.locator(".cand").count();
   must(cands === 2, "押せる候補が" + cands + "件");
