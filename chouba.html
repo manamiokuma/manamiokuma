@@ -199,7 +199,10 @@ h2 .n{font-family:var(--gothic);font-size:11.5px;letter-spacing:.02em;color:var(
 <div class="wrap">
   <header class="brand">
     <h1>帳場</h1>
-    <div class="st" id="st">読み込んでいます</div>
+    <div style="display:flex;align-items:baseline;gap:12px">
+      <span class="st" id="st">読み込んでいます</span>
+      <button class="st" data-act="data" style="text-decoration:underline;text-underline-offset:3px">控え</button>
+    </div>
   </header>
   <div id="banner"></div>
   <main id="app"></main>
@@ -364,6 +367,13 @@ function adopt(d){
     if(!w.stage)w.stage=w.status==="投稿済"||w.status==="検査済"?"完成":w.status==="保留"?"保留":"文体改稿";
     if(!w.kind)w.kind=w.isBook?"本":"web";
     if(w.charsNow==null)w.charsNow=w.totalChars||0;
+    if(w.driveUrl==null)w.driveUrl="";
+    if(w.driveTitle==null)w.driveTitle="";
+    if(w.driveModified==null)w.driveModified="";
+    if(w.driveQuery==null)w.driveQuery="";
+    if(w.driveState==null)w.driveState="";
+    if(w.driveCheckedAt==null)w.driveCheckedAt="";
+    if(w.driveHits==null)w.driveHits=0;
   });
 }
 function save(){
@@ -389,6 +399,124 @@ function flush(){
 window.addEventListener("pagehide",function(){if(saveTimer)flush()});
 document.addEventListener("visibilitychange",function(){
   if(document.visibilityState==="hidden"&&saveTimer)flush()});
+
+
+/* ============ ドライブ ============ */
+var mcpNs=null,mcpAsked=false,driveConn={state:"未確認",msg:""};
+function getMcp(){
+  if(mcpNs)return Promise.resolve(mcpNs);
+  if(!(window.claude&&typeof window.claude.use==="function"))return Promise.resolve(null);
+  return window.claude.use("mcp").then(function(m){mcpNs=m;return m});
+}
+function mcpFix(code){
+  switch(code){
+    case "needs_reauth":return "Googleドライブの接続が切れています。claude.ai の 設定 → コネクタ でつなぎ直してください。";
+    case "server_not_connected":return "Googleドライブがつながっていません。claude.ai の 設定 → コネクタ で追加してください。";
+    case "selection_required":return "同じ名前のコネクタが複数あります。どれを使うか選ぶと見に行けます。";
+    case "blocked_by_policy":return "この環境ではドライブの呼び出しが止められています。";
+    case "approval_required":return "この呼び出しには承認が要ります。いまは通せません。";
+    case "not_in_manifest":return "この画面はドライブの検索しか呼べません。";
+    case "server_unavailable":return "ドライブがいま応えません。少し置いて、もう一度押してください。";
+    case "rate_limited":return "呼び出しが立て込んでいます。少し置いてください。";
+    case "tool_error":return "ドライブが検索を断りました。";
+    case "cancelled":return "取り消しました。";
+    case "not_granted":case "capability_disabled":case "capability_removed":
+      return "この画面からはドライブを見に行けません。";
+    default:return "ドライブを見に行けませんでした。";
+  }
+}
+function checkDrive(){
+  return getMcp().then(function(m){
+    if(!m){driveConn={state:"使えません",msg:mcpFix("capability_disabled")};return}
+    return m.listTools().then(function(r){
+      var found=null;
+      ((r&&r.servers)||[]).forEach(function(sv){if(sv.server==="Google Drive")found=sv});
+      if(!found){driveConn={state:"つながっていません",msg:mcpFix("server_not_connected")}}
+      else if(found.authStatus==="needs_reauth"){driveConn={state:"つなぎ直しが要ります",msg:mcpFix("needs_reauth")}}
+      else{driveConn={state:"つながっています",msg:""}}
+    });
+  }).catch(function(e){
+    driveConn={state:"確かめられません",msg:mcpFix(e&&e.code)};
+  });
+}
+function qEsc(x){return String(x||"").replace(/\\/g,"").replace(/'/g,"\\'")}
+function searchWord(w){
+  if(w.driveQuery)return w.driveQuery;
+  var t=String(w.title||"");
+  t=t.replace(/[『』]/g,"").split("（")[0].split("(")[0].split("／")[0].trim();
+  return t;
+}
+function driveSearch(word,retried){
+  return getMcp().then(function(m){
+    if(!m)return Promise.reject({code:"capability_disabled"});
+    return m.callTool("Google Drive","search_files",
+      {query:"title contains '"+qEsc(word)+"'",pageSize:8,excludeContentSnippets:true},
+      {cache:{staleTime:60000}});
+  }).then(function(res){
+    var p=res&&res.payload;
+    if(typeof p==="string"){try{p=JSON.parse(p)}catch(e){p=null}}
+    var files=((p&&p.files)||[]).filter(function(f){
+      return f.mimeType!=="application/vnd.google-apps.folder"});
+    files.sort(function(a,b){return (b.modifiedTime||"")<(a.modifiedTime||"")?-1:1});
+    return files;
+  }).catch(function(e){
+    if(!retried&&e&&e.retryable){
+      return new Promise(function(r){setTimeout(r,900+Math.random()*600)})
+        .then(function(){return driveSearch(word,true)});
+    }
+    return Promise.reject(e);
+  });
+}
+function bindDrive(w,f){
+  w.driveTitle=f.title;w.driveUrl=f.viewUrl;
+  w.driveModified=String(f.modifiedTime||"").slice(0,10);
+  w.driveCheckedAt=today();w.driveState="";w.driveHits=0;
+}
+/* 控えの見立て——手で印をつけていればそれを優先する */
+function backupState(w){
+  if(!w.driveUrl)return {k:"none",t:(w.driveHits?"候補あり":"控えなし")};
+  if(w.driveState==="最新")return {k:"ok",t:"控えは最新"};
+  if(w.driveState==="古い")return {k:"old",t:"控えが古い"};
+  if(w.updatedAt&&w.driveModified&&w.updatedAt>w.driveModified)
+    return {k:"old",t:"控えが古いかも"};
+  return {k:"ok",t:"控えあり"+(w.driveModified?"（"+w.driveModified.slice(5).replace("-","/")+"）":"")};
+}
+function needsBackup(){
+  return S.works.filter(function(w){
+    if(w.stage==="保留")return false;
+    return backupState(w).k!=="ok";
+  }).sort(function(a,b){return STEP[b.stage]-STEP[a.stage]});
+}
+/* 順に見に行く（一度に見るのは12本まで） */
+function sweep(list,line){
+  var i=0,upd=0,cand=0,none=0,err=null;
+  function step(){
+    if(i>=list.length||err){
+      var msg=list.length+"本のうち"+i+"本を見に行きました。更新あり"+upd+"／候補あり"+cand+"／見つからず"+none;
+      if(err)msg+="。"+mcpFix(err.code);
+      save();render();banner(msg,false,err?false:"ok");return;
+    }
+    var w=list[i];
+    if(line)line.textContent="見に行っています… "+(i+1)+"/"+list.length+"　"+w.title;
+    var word=w.driveUrl&&w.driveTitle?w.driveTitle:searchWord(w);
+    driveSearch(word).then(function(files){
+      w.driveCheckedAt=today();
+      if(w.driveUrl){
+        var same=null;
+        files.forEach(function(f){if(f.viewUrl===w.driveUrl||f.title===w.driveTitle)same=f});
+        if(same){
+          var m=String(same.modifiedTime||"").slice(0,10);
+          if(m&&m!==w.driveModified){w.driveModified=m;w.driveState="";upd++}
+        }else{none++}
+      }else{
+        w.driveHits=files.length;
+        if(files.length)cand++;else none++;
+      }
+      i++;setTimeout(step,220);
+    }).catch(function(e){err=e;step()});
+  }
+  step();
+}
 
 /* ============ 画面まわり ============ */
 function go(v){stack.push(JSON.parse(JSON.stringify(view)));view=v;render();window.scrollTo(0,0)}
@@ -564,7 +692,9 @@ function vWorks(){
         (w.charsNow?'<span>'+num(w.charsNow)+'字</span>':"")+
         (es.length?'<span>'+es.length+'話</span>':"")+
         (rl?'<span class="pill ai">'+esc(rl.short||rl.title)+'</span>':"")+
-        (w.driveUrl?'<span class="pill">原稿あり</span>':"")+
+        (function(){var b=backupState(w);
+          return b.k==="ok"?'<span class="pill md">控えあり</span>':
+                 b.k==="old"?'<span class="pill shu">控えが古い</span>':"";})()+
         (w.updatedAt?'<span>'+diffDays(w.updatedAt,today())+'日前</span>':"")+
       '</div>'+
       (w.kind==="本"?'<div class="book">同人誌にする ─ pixivには出さない</div>':"")+
@@ -628,16 +758,37 @@ function vWork(){
   h+='<label class="field"><span>覚え書き</span><textarea style="min-height:80px" data-w="'+w.id+'" data-f="note">'+esc(w.note)+'</textarea></label>';
   h+='</section>';
   h+='<div class="sep"></div><section><h2>原稿の置き場</h2>';
+  var bs=backupState(w);
+  h+='<div class="wf" style="margin:0 0 8px"><span class="pill'+(bs.k==="ok"?" md":bs.k==="old"?" shu":"")+'">'+bs.t+'</span>'+
+     (w.driveCheckedAt?'<span style="font-size:11.5px;color:var(--dim)">'+w.driveCheckedAt+' に確かめました</span>':"")+'</div>';
   if(w.driveUrl){
     h+='<a class="link" href="'+esc(w.driveUrl)+'" target="_blank" rel="noopener">'+
-       esc(w.driveTitle||"Googleドライブの原稿")+'</a>';
-    h+='<div class="hint">'+(w.driveModified?"ドライブでの最終更新："+esc(String(w.driveModified).slice(0,10)):"")+
+       esc(w.driveTitle||"ドライブの原稿")+'</a>';
+    h+='<div class="hint">'+(w.driveModified?"ドライブでの最終更新："+esc(w.driveModified):"")+
        '　開けないときは下のURLを写してください。</div>';
   }
+  h+='<button class="btn" data-act="dr-find" data-id="'+w.id+'">ドライブを見に行く</button>';
+  if(view.hits){
+    h+='<div class="hint">見つかったもの（押すと結びつけます）</div>';
+    if(!view.hits.length)h+='<div class="empty">同じ名前のファイルはありませんでした。下の「探す言葉」を変えてみてください。</div>';
+    view.hits.forEach(function(f,i){
+      h+='<button class="row" data-act="dr-bind" data-id="'+w.id+'" data-i="'+i+'">'+
+        '<span class="body"><span class="t">'+esc(f.title)+'</span><span class="m">'+
+        '<span class="tabular">'+esc(String(f.modifiedTime||"").slice(0,10))+'</span>'+
+        (f.fileSize?'<span class="tabular">'+Math.round(+f.fileSize/1024)+'KB</span>':"")+
+        (f.viewUrl===w.driveUrl?'<span class="pill md">いま結んでいるもの</span>':"")+
+        '</span></span><span class="go">›</span></button>';
+    });
+  }
+  if(view.driveErr)h+='<div class="hint shu">'+esc(view.driveErr)+'</div>';
+  h+='<div class="btns">'+
+     '<button class="btn quiet'+(w.driveState==="最新"?" fill":"")+'" data-act="dr-state" data-id="'+w.id+'" data-s="最新">これが最新</button>'+
+     '<button class="btn quiet'+(w.driveState==="古い"?" fill":"")+'" data-act="dr-state" data-id="'+w.id+'" data-s="古い">控えは古い</button>'+
+     '</div>';
+  h+='<div class="hint">手で印をつけると、その印が見立てより優先されます。もう一度押すと自動の見立てに戻ります。</div>';
+  h+='<label class="field"><span>探す言葉（題と違うファイル名のとき）</span><input value="'+esc(w.driveQuery)+'" data-w="'+w.id+'" data-f="driveQuery" placeholder="'+esc(searchWord(w))+'"></label>';
   h+='<label class="field"><span>ドライブのURL</span><input value="'+esc(w.driveUrl)+'" data-w="'+w.id+'" data-f="driveUrl" placeholder="https://drive.google.com/..."></label>';
-  h+='<label class="field"><span>ファイル名</span><input value="'+esc(w.driveTitle)+'" data-w="'+w.id+'" data-f="driveTitle"></label>';
   h+='</section>';
-
   h+='<div class="sep"></div><section><h2>pixivの話<span class="n">'+es.length+'本</span></h2>';
   if(w.kind==="本")h+='<div class="hint shu">同人誌にする作品です。pixivには出さない方針。</div>';
   if(!es.length)h+='<div class="empty">まだ分けていません。</div>';
@@ -939,6 +1090,30 @@ function prevEp(e){
 /* ---- 控え ---- */
 function vData(){
   var h='<button class="back" data-act="back">‹ もどる</button>';
+  var nb=needsBackup(),ok=S.works.length-nb.length;
+  h+='<section><h2>ドライブの点検</h2>';
+  h+='<div class="note" style="padding:0 0 8px">コネクタ：'+esc(driveConn.state)+
+     (driveConn.msg?'<br><span style="color:var(--shu)">'+esc(driveConn.msg)+'</span>':"")+'</div>';
+  h+='<dl class="facts" style="border-top:1px solid var(--rule)">'+
+     '<div><dt>控えが要るもの</dt><dd>'+nb.length+'<span>本</span></dd></div>'+
+     '<div><dt>控えあり</dt><dd>'+ok+'<span>本</span></dd></div></dl>';
+  h+='<div class="hint" id="sweepLine">押すと、上から12本ずつドライブを見に行きます。'+
+     'すでに結んである原稿は更新日を取り直し、まだ結んでいないものは候補があるかだけ見ます（勝手には結びません）。</div>';
+  h+='<button class="btn fill" data-act="dr-sweep">ドライブを見に行く（12本ずつ）</button>';
+  if(nb.length){
+    h+='<section><h2>控えが要るもの<span class="n">'+nb.length+'本</span></h2>';
+    nb.slice(0,20).forEach(function(w){
+      var b=backupState(w);
+      h+='<button class="row" data-act="work" data-id="'+w.id+'">'+
+        '<span class="body"><span class="t">'+esc(w.title)+'</span><span class="m">'+
+        stageName(w)+'<span class="pill'+(b.k==="old"?" shu":"")+'">'+b.t+'</span>'+
+        (w.driveModified?'<span class="tabular">ドライブ '+esc(w.driveModified)+'</span>':"")+
+        (w.updatedAt?'<span class="tabular">台帳 '+esc(w.updatedAt)+'</span>':"")+
+        '</span></span><span class="go">›</span></button>';
+    });
+    h+='</section>';
+  }
+  h+='</section><div class="sep"></div>';
   h+='<section><h2>控え</h2>';
   h+='<div class="note">保存先：'+(store.label||"なし（この画面での変更は残りません）")+'<br>'+
      '作品 '+S.works.length+'本 ／ 話 '+S.episodes.length+'本 ／ シリーズ '+S.series.length+' ／ 発行 '+S.releases.length+'</div>';
@@ -1032,7 +1207,39 @@ document.addEventListener("click",function(ev){
   var act=b.getAttribute("data-act"),id=b.getAttribute("data-id");
   if(act==="tab"){jump({name:id});return}
   if(act==="back"){back();return}
-  if(act==="data"){go({name:"data"});return}
+  if(act==="data"){
+    go({name:"data"});
+    if(!mcpAsked){mcpAsked=true;checkDrive().then(function(){if(view.name==="data")render()})}
+    return;
+  }
+  if(act==="dr-find"){
+    var wf=work(id);if(!wf)return;
+    view.driveErr="";view.hits=null;
+    banner("ドライブを見に行っています…",false,"ok");
+    driveSearch(searchWord(wf)).then(function(files){
+      view.hits=files;view.driveErr="";clearBanner();render();
+    }).catch(function(e){
+      view.hits=null;view.driveErr=mcpFix(e&&e.code);clearBanner();render();
+    });
+    return;
+  }
+  if(act==="dr-bind"){
+    var wb=work(id),f=(view.hits||[])[+b.getAttribute("data-i")];
+    if(!wb||!f)return;
+    bindDrive(wb,f);view.hits=null;save();render();return;
+  }
+  if(act==="dr-state"){
+    var ws=work(id),st2=b.getAttribute("data-s");if(!ws)return;
+    ws.driveState=ws.driveState===st2?"":st2;
+    ws.driveCheckedAt=today();save();render();return;
+  }
+  if(act==="dr-sweep"){
+    var list=S.works.filter(function(w){return w.stage!=="保留"})
+      .sort(function(a,b){return (a.driveCheckedAt||"")<(b.driveCheckedAt||"")?-1:1}).slice(0,12);
+    if(!list.length){banner("見に行くものがありません。");return}
+    sweep(list,document.getElementById("sweepLine"));
+    return;
+  }
   if(act==="filter"){filt.works=id;render();return}
   if(act==="work"){go({name:"work",workId:id});return}
   if(act==="ep"){go({name:"ep",epId:id});return}
@@ -1053,7 +1260,8 @@ document.addEventListener("click",function(ev){
   if(act==="touch"){var w2=work(id);if(w2){touch(w2);save();render()}return}
   if(act==="new-work"){
     var w3={id:uid(),title:"新しい作品",fandom:"",kind:"未定",stage:"構想",chaptersDone:0,
-      chaptersTotal:0,charsNow:0,charsTarget:0,seriesId:"",releaseId:"",note:"",updatedAt:today()};
+      chaptersTotal:0,charsNow:0,charsTarget:0,seriesId:"",releaseId:"",note:"",updatedAt:today(),
+      driveUrl:"",driveTitle:"",driveModified:"",driveQuery:"",driveState:"",driveCheckedAt:"",driveHits:0};
     S.works.unshift(w3);save();go({name:"work",workId:w3.id});return;
   }
   if(act==="del-work"){

@@ -170,5 +170,6 @@ node tools/uitest.mjs      # 画面の通し（playwright が入っていると�
 - 「検査済（`checked`）」と「pixivの予約に入れ終えた（`reserved`）」は別の印です
 - 分からない段階は**推測で埋めず「未記入」**にしておき、ダッシュボードが埋めるよう促します
 - 保存は `window.storage`、なければArtifactの `db` に `novel-queue:data` ひとつのキーで
+- ドライブの控えが最新かどうかを、台帳から見に行って突き合わせられます（検索のみ）
 
 くわしくは `docs/帳場.md` に。
