@@ -154,13 +154,30 @@ await step("覚え書きが残る", async () => {
   await p.fill("#r-memo", "三章の呼称ゆれ");
   await p.locator("#r-memo").blur();
 });
-await step("読み終えると次の区切りへ", async () => {
+await step("読み終えると、その区切りがWordに書き出される", async () => {
+  const dl = p.waitForEvent("download");
   await p.click("#r-done");
+  const d = await dl;
+  must(d.suggestedFilename() === "人形の部屋_001区切り.docx", "名前が違う: " + d.suggestedFilename());
+  await d.saveAs("tools/tmp-page.docx");
   must(await vis("read"), "次の区切りに進まない");
   must((await p.textContent("#r-count")).startsWith("2 /"), "区切り番号が進まない");
 });
-await step("最後まで行くと作品画面に戻る", async () => {
+await step("設定で止められる", async () => {
+  await p.click("#r-back");
+  await p.click("#btn-conf2");
+  await p.click("#c-auto");
+  must(!(await p.locator("#c-auto").evaluate(el => el.className.includes("on"))), "止まらない");
+  await p.click("#c-back");
+  await p.click("#btn-go");
+  let 出た = false;
+  p.once("download", () => { 出た = true; });
   await p.click("#r-done");
+  await p.waitForTimeout(700);
+  must(!出た, "止めたのに書き出された");
+  await p.click("#btn-conf2"); await p.click("#c-auto"); await p.click("#c-back");   /* 戻す */
+});
+await step("最後まで行くと作品画面に戻る", async () => {
   must(await vis("work"), "作品画面に戻らない");
   must(await p.locator("#w-sheet .cell.done").count() === 2, "マスが埋まらない");
 });

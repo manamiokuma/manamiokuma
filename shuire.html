@@ -223,7 +223,7 @@
     <button class="add" id="btn-add">＋ 原稿を入れる</button>
     <div class="stat" id="home-stat"></div>
     <div class="foot">
-      <button id="btn-conf">下読みの設定</button>
+      <button id="btn-conf">設定</button>
       <button id="btn-about">この道具について</button>
     </div>
   </section>
@@ -246,7 +246,7 @@
     </div>
     <button class="go quiet" id="btn-talk" style="margin-top:9px">付箋をClaudeに相談する</button>
     <div class="stat" id="w-stat"></div>
-    <div class="foot"><button id="btn-del" style="color:#8d9bab">この原稿を消す</button><button id="btn-resize">区切りを割り直す</button><button id="btn-conf2">下読みの設定</button></div>
+    <div class="foot"><button id="btn-del" style="color:#8d9bab">この原稿を消す</button><button id="btn-resize">区切りを割り直す</button><button id="btn-conf2">設定</button></div>
   </section>
 
   <!-- 読む -->
@@ -346,7 +346,12 @@
 
   <!-- 設定 -->
   <section id="v-conf" class="hide">
-    <div class="brand"><h1 class="sub-h">下読みの設定</h1><button id="c-back">戻る</button></div>
+    <div class="brand"><h1 class="sub-h">設定</h1><button id="c-back">戻る</button></div>
+    <p class="cat-h" style="margin-top:0">Wordへの控え</p>
+    <button class="sw" id="c-auto"><i></i><div><b>区切りを読み終えるたびにWordへ</b><span>その区切りの本文（直し反映・朱は赤・付箋は山吹）と控えを、一区切りずつ書き出します。端末のデータが消えても、Wordの側に残ります</span></div></button>
+    <button class="go quiet" id="c-dir" style="margin-top:11px">書き出し先のフォルダを選ぶ</button>
+    <p class="hint" id="c-dirstat" style="margin:7px 0 4px"></p>
+    <p class="cat-h">下読み</p>
     <p class="lead">機械が先に読んで、あやしい行に<u>鉛筆</u>を引きます。朱は人が入れるもの、鉛筆は機械が引くもの。うるさい項目は消してください。消しても本文は変わりません。</p>
     <div id="c-list"></div>
     <div class="foot"><button id="c-all">ぜんぶ点ける</button><button id="c-none">ぜんぶ消す</button></div>
@@ -392,7 +397,19 @@ function jdate(){ const d=new Date(); return d.getFullYear()+"年"+(d.getMonth()
 function stamp(){ const d=new Date(); return ""+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); }
 function mins(n){ const m=Math.max(1,Math.round(n/(conf.cpm||200))); return m<60?m+"分":Math.floor(m/60)+"時間"+(m%60?String(m%60)+"分":""); }
 const VIEWS=["home","work","read","notes","report","out","add","pass","conf","about","talk"];
-function view(v){ VIEWS.forEach(n=>$("v-"+n).classList.toggle("hide",n!==v)); window.scrollTo(0,0); }
+function view(v,keep){ VIEWS.forEach(n=>$("v-"+n).classList.toggle("hide",n!==v)); if(!keep) window.scrollTo(0,0); }
+/* 手を入れた行を、画面の同じ高さに留めておくための錨 */
+function anchorSel(key){ return key==="wide"?"#r-wide-box":'#r-text .lnhold[data-k="'+key+'"]'; }
+function anchorGet(key){
+  if(key===undefined||key===null) return null;
+  const el=document.querySelector(anchorSel(key));
+  return el?{key:key,top:el.getBoundingClientRect().top}:null;
+}
+function anchorPut(a){
+  if(!a) return;
+  const el=document.querySelector(anchorSel(a.key));
+  if(el) window.scrollTo(0,Math.max(0,el.getBoundingClientRect().top+window.scrollY-a.top));
+}
 
 /* ---------- 通しの種類 ---------- */
 const KINDS=[
@@ -713,7 +730,8 @@ function flushWork(){
 /* ============================================================
    画面：読む
    ============================================================ */
-function openBlock(i){
+function openBlock(i,keep){
+  const a=(pos===i)?anchorGet(keep):null;   /* 同じ区切りを描き直すときだけ留める */
   pos=i;
   const b=cur.blocks[i], ls=lines(b.t);
   $("r-count").textContent=(i+1)+" / "+cur.blocks.length;
@@ -743,7 +761,8 @@ function openBlock(i){
   showLen();
   $("r-memo").value=b.note||"";
   $("r-done").textContent = b.done? "読み終えた印を消す" : "朱を入れ終えた";
-  view("read");
+  view("read",!!a);
+  anchorPut(a);
 }
 /* 付箋のコメント。押すだけの札と、ひとこと。key は行番号か "wide" */
 function memoRow(key,val){
@@ -769,7 +788,17 @@ function wireMemoRows(root){
       el.classList.toggle("on",i<0);
     });
     const inp=row.querySelector(".tagfree");
-    inp.onchange=()=>{ const now=getMemo(key); setMemo(key,memoJoin(memoTags(now),inp.value.trim().replace(/[、,]/g,"／"))); };
+    let anc=null;
+    const back=()=>{                       /* 打ち終わって画面が動いても、その行に戻す */
+      if(!anc) return;
+      const a=anc;
+      requestAnimationFrame(()=>anchorPut(a));
+      setTimeout(()=>anchorPut(a),300);    /* 携帯のキーボードが閉じきるのを待つ */
+    };
+    inp.onfocus=()=>{ anc=anchorGet(key); };
+    inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } };
+    inp.onchange=()=>{ const now=getMemo(key); setMemo(key,memoJoin(memoTags(now),inp.value.trim().replace(/[、,]/g,"／"))); back(); };
+    inp.onblur=back;
   });
 }
 function renderWideBox(){
@@ -794,7 +823,7 @@ function openWideSheet(){
     '<button class="advrest" id="sh-advdel" style="margin-top:8px;text-decoration:underline">この案を消す</button></div>'+
     '<div class="row"><button class="go quiet" id="sh-close">閉じる</button></div>';
   $("veil").classList.remove("hide");
-  $("sh-advdel").onclick=()=>{ delete b.advice.all; saveWork(true); closeSheet(); openBlock(pos); };
+  $("sh-advdel").onclick=()=>{ delete b.advice.all; saveWork(true); closeSheet(); openBlock(pos,"wide"); };
   $("sh-close").onclick=closeSheet;
 }
 function showLen(){
@@ -855,7 +884,8 @@ function openSheet(k){
     '<button class="go quiet" id="sh-close">閉じる</button></div>';
   $("veil").classList.remove("hide");
   const ta=$("sh-t");
-  ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
+  try{ ta.focus({preventScroll:true}); }catch(e){ ta.focus(); }
+  ta.setSelectionRange(ta.value.length,ta.value.length);
   ta.onkeydown=e=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter") applyFix(); };
   $("sh-save").onclick=applyFix;
   $("sh-mark").onclick=()=>{ toggleMark(k); closeSheet(); };
@@ -863,9 +893,9 @@ function openSheet(k){
   $("card").querySelectorAll(".cand").forEach(el=>el.onclick=()=>{
     const ta=$("sh-t"); ta.value=el.dataset.t; ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length);
   });
-  if($("sh-advdel")) $("sh-advdel").onclick=()=>{ delete b.advice[k]; saveWork(true); openSheet(k); };
+  if($("sh-advdel")) $("sh-advdel").onclick=()=>{ delete b.advice[k]; saveWork(true); closeSheet(); openBlock(pos,k); };
   $("sh-close").onclick=closeSheet;
-  if(fixed) $("sh-undo").onclick=()=>{ delete b.edits[k]; afterFix("直しをもとに戻しました"); };
+  if(fixed) $("sh-undo").onclick=()=>{ delete b.edits[k]; afterFix("直しをもとに戻しました",k); };
 }
 function advBlock(text){
   if(!text) return "";
@@ -884,12 +914,12 @@ function applyFix(){
   if(v===org) delete b.edits[k]; else b.edits[k]=v;
   cur.log.push({p:cur.pass,k:cur.kind,b:pos,i:k,o:before,n:v,at:Date.now()});
   if(cur.log.length>4000) cur.log.splice(0,cur.log.length-4000);
-  afterFix("直しました");
+  afterFix("直しました",k);
 }
-function afterFix(msg){
+function afterFix(msg,keep){
   yure=buildYure(cur);
   penCache=readWork(cur, kindOf(cur.kind).cats);
-  saveWork(true); closeSheet(); openBlock(pos); toast(msg);
+  saveWork(true); closeSheet(); openBlock(pos,keep); toast(msg);
 }
 $("veil").onclick=e=>{ if(e.target===$("veil")) closeSheet(); };
 document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("veil").classList.contains("hide")) closeSheet(); });
@@ -897,10 +927,11 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("veil").classLi
 /* ============================================================
    起動
    ============================================================ */
-function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, cpm:200}; }
+function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, cpm:200, autoWord:true}; }
 (function boot(){
   conf=jget(K_CONF)||defaultConf();
   conf.rules=conf.rules||{}; RULES.forEach(x=>{ if(conf.rules[x.id]===undefined) conf.rules[x.id]=true; });
+  if(conf.autoWord===undefined) conf.autoWord=true;
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
@@ -990,12 +1021,71 @@ function buildDocx(paras){
   return zipStore([{name:"[Content_Types].xml",data:enc.encode(ct)},{name:"_rels/.rels",data:enc.encode(rels)},
     {name:"word/_rels/document.xml.rels",data:enc.encode(drels)},{name:"word/document.xml",data:enc.encode(doc)}]);
 }
-function save(bytes,name,mime){
+function save(bytes,name,mime,quiet){
   const b=new Blob([bytes],{type:mime||"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
   const u=URL.createObjectURL(b), a=document.createElement("a");
   a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(u),4000);
-  toast("書き出しました　"+name);
+  if(!quiet) toast("書き出しました　"+name);
+}
+/* 区切りごとの控えの置き場。フォルダを選んでおけば同じ名前で上書きしていく */
+let outDir=null;
+const canDir=()=>typeof window.showDirectoryPicker==="function";
+async function pickDir(){
+  if(!canDir()){ toast("この端末ではフォルダを選べません。書き出しはダウンロードになります"); return; }
+  try{ outDir=await window.showDirectoryPicker({mode:"readwrite"}); toast("書き出し先を決めました"); }
+  catch(e){ return; }
+  renderConf();
+}
+async function writeOut(bytes,name){
+  if(outDir){
+    try{
+      const fh=await outDir.getFileHandle(name,{create:true});
+      const w=await fh.createWritable();
+      await w.write(bytes); await w.close();
+      return "folder";
+    }catch(e){ outDir=null; }      /* 権限が切れたらダウンロードに戻す */
+  }
+  save(bytes,name,null,true);
+  return "download";
+}
+/* 一区切りぶんの控え。本文（直し反映・朱は赤・付箋は山吹）と、その区切りの控え */
+function blockDocx(i){
+  const b=cur.blocks[i], ls=lines(b.t);
+  const ps=[para([{t:cur.title,b:true,sz:28}],true),
+            para([{t:(i+1)+"区切り目　"+jdate()+"　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）",sz:18,color:GRAY}])];
+  let buf=[];
+  const flush=()=>{ if(buf.length){ ps.push(para(buf)); buf=[]; } };
+  ls.forEach((x,k)=>{
+    if(x===null){ flush(); return; }
+    const fx=disp(b,k)!==null, mk=b.marks.indexOf(k)>=0, fs=b.fusen.indexOf(k)>=0;
+    buf.push({t:lineText(b,ls,k), color: fx?SUMI:(mk?SHU:(fs?FUSEN:null))});
+  });
+  flush();
+  const rows=[];
+  Object.keys(b.edits).map(Number).sort((x,y)=>x-y).forEach(k=>rows.push(["直",ls[k],b.edits[k]]));
+  b.fusen.slice().sort((x,y)=>x-y).forEach(k=>rows.push(["付",lineText(b,ls,k),(b.fmemo[k]||"").trim()]));
+  b.marks.forEach(k=>{ if(b.edits[k]===undefined) rows.push(["朱",lineText(b,ls,k),""]); });
+  if(b.wide&&b.wide.on) rows.push(["付","（この区切りまるごと）",(b.wide.memo||"").trim()]);
+  if(b.note.trim()) rows.push(["覚",b.note.trim(),""]);
+  if(rows.length){
+    ps.push(para([{t:"控え",b:true,sz:21}],true));
+    rows.forEach(r=>{
+      if(r[0]==="直"){ ps.push(para([{t:"直 ",sz:18,color:GRAY},{t:r[1],st:true,color:GRAY}])); ps.push(para([{t:"→ ",sz:18},{t:r[2],color:SUMI}])); }
+      else if(r[0]==="付") ps.push(para([{t:"付 ",sz:18,color:FUSEN},{t:r[1],color:FUSEN},{t:r[2]?"　（"+r[2]+"）":"",sz:18,color:GRAY}]));
+      else if(r[0]==="朱") ps.push(para([{t:"朱 ",sz:18,color:SHU},{t:r[1],color:SHU}]));
+      else ps.push(para([{t:"覚 "+r[1],sz:18}]));
+    });
+  }
+  return buildDocx(ps);
+}
+async function autoWord(i){
+  if(conf.autoWord===false) return;
+  try{
+    const name=cur.title+"_"+String(i+1).padStart(3,"0")+"区切り.docx";
+    const how=await writeOut(blockDocx(i),name);
+    toast((i+1)+"区切り目をWordに"+(how==="folder"?"書き込みました":"書き出しました"));
+  }catch(e){ toast("Wordへの書き出しに失敗しました"); }
 }
 function saveText(t,name){ save(new TextEncoder().encode("﻿"+t),name,"text/plain;charset=utf-8"); }
 function headParas(sub){
@@ -1326,6 +1416,12 @@ function renderPass(){
    画面：設定
    ============================================================ */
 function renderConf(){
+  $("c-auto").classList.toggle("on",conf.autoWord!==false);
+  $("c-dir").classList.toggle("hide",!canDir());
+  $("c-dirstat").textContent = !canDir()
+    ? "この端末ではフォルダを選べません。読み終えるたびに、いつもの場所へダウンロードされます。"
+    : (outDir? "書き出し先："+outDir.name+"　同じ名前で上書きしていきます（アプリを閉じると選び直しになります）"
+             : "フォルダを選ぶと、ダウンロードが溜まらず、同じファイルに上書きしていきます。");
   let html="";
   ["hyoki","buntai","seigou"].forEach(c=>{
     html+='<p class="cat-h">'+CATNAME[c]+'</p>';
@@ -1352,7 +1448,7 @@ $("ab-body").innerHTML=
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
  '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。相談の画面で作品の世界を選んでおくと、票の頭に「先に開いてほしいスキル」（文体の正本、その作品の設定の正本、R18の様式）が並ぶので、Claudeは記憶ではなく正本を見て答えます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+
- '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、区切りのいいところで書き出して控えを取ってください。</p>';
+ '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、<em>区切りを読み終えるたびにWordへ</em>を点けたままにしておいてください。一区切りずつWordの控えが残るので、この端末から消えても失われません。パソコンなら、設定で書き出し先のフォルダを決めておくと、ダウンロードが溜まらず同じファイルに上書きされます。</p>';
 
 /* ============================================================
    つなぎ込み
@@ -1386,6 +1482,8 @@ $("p-back").onclick=()=>{ renderWork(); view("work"); };
 $("c-back").onclick=()=>{ if(cur){ renderWork(); view("work"); } else { renderHome(); view("home"); } };
 $("ab-back").onclick=()=>{ renderHome(); view("home"); };
 $("btn-conf").onclick=renderConf;
+$("c-auto").onclick=()=>{ conf.autoWord=conf.autoWord===false; saveConf(); renderConf(); };
+$("c-dir").onclick=pickDir;
 $("btn-conf2").onclick=renderConf;
 $("btn-about").onclick=()=>view("about");
 $("c-all").onclick=()=>{ RULES.forEach(r=>conf.rules[r.id]=true); saveConf(); renderConf(); };
@@ -1450,10 +1548,11 @@ $("r-nextpen").onclick=()=>{
 };
 $("r-done").onclick=()=>{
   saveMemo();
-  const b=cur.blocks[pos], was=b.done;
+  const b=cur.blocks[pos], was=b.done, finished=pos;
   b.done=!was;
   if(!was){ const k=ymd(); daily[k]=(daily[k]||0)+1; jset(K_DAILY,daily); }
   saveWork(true);
+  if(!was) autoWord(finished);
   if(!was){
     const f=firstUndone();
     if(f<0){ renderWork(); view("work"); $("w-sheet").classList.add("finished"); toast("ひと通り、朱を入れ終えました"); return; }
