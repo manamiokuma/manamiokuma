@@ -441,6 +441,38 @@ run("同じ作品を入れ直すと置き換わり、外すと消える", () => 
   ev("memory = []; cur = null; curId = null");
 });
 
+console.log("\n差分メモの読み込み");
+run("矢印・削除・回数を読む", () => {
+  const r = ev(`parseMemo(${JSON.stringify("- 静かに を削除　×4\n・事 → こと　3件\n「のだった」→「だった」\nまるで夢のように（削除）\n彼女の目 -> 目（2）")})`);
+  eq(r.pairs.length, 5, "読めた行の数: " + JSON.stringify(r));
+  eq(r.pairs[0].o, "静かに"); eq(r.pairs[0].n, ""); eq(r.pairs[0].c, 4, "×4 を回数として読めない");
+  eq(r.pairs[1].o, "事"); eq(r.pairs[1].n, "こと"); eq(r.pairs[1].c, 3, "3件 を回数として読めない");
+  eq(r.pairs[2].o, "のだった"); eq(r.pairs[2].n, "だった", "かっこを剥がせない");
+  eq(r.pairs[3].n, "", "（削除）を削除として読めない");
+  eq(r.pairs[4].c, 2, "（2）を回数として読めない");
+});
+run("読めない行は飛ばして、飛ばしたことを伝える", () => {
+  const r = ev(`parseMemo(${JSON.stringify("# 見出し\nただの説明文\n事 → こと")})`);
+  eq(r.pairs.length, 1); eq(r.skipped.length, 1, "説明文を飛ばしたことが分からない");
+});
+run("メモの対は突き合わせずに、書いてあるとおりに数える", () => {
+  ev("memory = []; cur = null; curId = null");
+  ev(`importMemo(${JSON.stringify("静かに を削除　×3\nのだった → だった　×2\n事 → こと")}, "旧作の控え")`);
+  const cand = ev("harvestRows(harvest(memory), 2)");
+  const keys = cand.map(x => x.k + ":" + x.n).join(" ");
+  truthy(keys.indexOf("静かに:3") >= 0, "削除の回数が違う: " + keys);
+  truthy(keys.indexOf("のだった → だった:2") >= 0, "言い換えが「の」に縮んでいる（突き合わせてしまっている）: " + keys);
+  truthy(keys.indexOf("事 → こと") < 0, "一回きりが規則候補に混じる");
+});
+run("メモから先回りの鉛筆ができる", () => {
+  ev(`__m = {v:2, id:"m", title:"新作", blocks: cutBlocks("　彼は静かに息を吐いた。それが答えなのだった。", 2200), pass:1, kind:"typo", log:[], history:[]}; migrate(__m); cur = __m; curId = "m"; index = []; buildMine()`);
+  eq(ev("mineCache.length"), 2, "鉛筆の本数");
+  const r = ev("readBlock(cur.blocks[0], null)");
+  truthy(r[0] && r[0].some(x => x.msg.indexOf("よく削る「静かに」") === 0), "削除の鉛筆が引かれない: " + JSON.stringify(r));
+  truthy(r[1] && r[1].some(x => x.msg.indexOf("よく直す「のだった」→「だった」") === 0), "言い換えの鉛筆が引かれない: " + JSON.stringify(r));
+  ev("memory = []; cur = null; curId = null");
+});
+
 console.log("\n締め切りと見通し");
 const 日 = n => { const d = new Date(); d.setDate(d.getDate() - n);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };

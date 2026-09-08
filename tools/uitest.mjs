@@ -630,6 +630,24 @@ await step("過去の直しを持ち越すと、いまの原稿に先回りの�
   await p.click("#r-back");
   await p.click("#btn-out");                    /* 次の段は書き出す画面から始まる */
 });
+await step("差分メモを貼っても持ち越せる", async () => {
+  await p.click("#o-back");
+  await p.click("#btn-conf2");
+  await p.fill("#m-title", "メモの作品");
+  await p.fill("#m-memo", "- 塔 を削除　×3\n・煙って → 煙り　2件\nただの説明の行");
+  await p.click("#m-memo-go");
+  await p.waitForTimeout(300);
+  const st = await p.textContent("#m-memo-stat");
+  must(st.includes("5件を持ち越しました"), "件数が違う: " + st);
+  must(st.includes("読めなかった行 1"), "読めなかった行を伝えていない: " + st);
+  must((await p.textContent("#m-list")).includes("メモの作品"), "一覧に出ない");
+  await p.click("#c-back");
+  await p.click("#btn-go");
+  const msgs = await p.locator(".pen-msg").allTextContents();
+  must(msgs.some(m => m.includes("よく削る「塔」")) || msgs.some(m => m.includes("煙って")), "メモから先回りが引かれない: " + msgs.join(" | "));
+  await p.click("#r-back");
+  await p.click("#btn-out");
+});
 await step("画面の絵を撮る", async () => {
   await p.click("#o-back");
   await p.screenshot({ path: "tools/tmp-work.png" });

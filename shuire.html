@@ -421,6 +421,11 @@
     <input id="m-file-a" type="file" accept=".docx,.txt,.md" hidden><input id="m-file-b" type="file" accept=".docx,.txt,.md" hidden>
     <p class="hint" id="m-stat" style="margin:7px 0 10px">まだ選んでいません</p>
     <button class="go" id="m-go">突き合わせて持ち越す</button>
+    <p class="hint" style="margin:14px 0 6px">初稿が残っていないときは、<b>差分メモ</b>でも入れられます。一行に一つ、「A → B」か「A を削除」。末尾の「3件」「×3」は回数として数えます。</p>
+    <div class="field"><textarea id="m-memo" placeholder="静かに を削除　×4&#10;事 → こと　3件&#10;のだった → だった" style="min-height:110px;font-family:var(--gothic);font-size:14px;line-height:1.8"></textarea></div>
+    <div class="row"><button class="go quiet" id="m-memo-pick">メモのファイルを選ぶ</button><button class="go quiet" id="m-memo-go">メモを持ち越す</button></div>
+    <input id="m-memo-file" type="file" accept=".txt,.md" hidden>
+    <p class="hint" id="m-memo-stat" style="margin:7px 0 0"></p>
     <div id="m-list" style="margin-top:12px"></div>
     <p class="cat-h">自分の直しから作る鉛筆</p>
     <button class="sw" id="c-mine"><i></i><div><b>同じ直しを二回したら、次から先回りする</b><span>行を直した記録から「よく削る語」「よく言い換える語」を拾い、その形が残っている行に鉛筆を引きます。通しの種類にかかわらず出ます</span></div></button>
@@ -1732,6 +1737,14 @@ function harvest(entries){
   (entries||allEdits()).forEach(l=>{
     if(typeof l.o!=="string"||typeof l.n!=="string"||l.o===l.n) return;
     n.fix++;
+    if(l.memo){                                       /* 差分メモは「直しそのもの」なので、そのまま数える */
+      const c=l.c||1; n.move+=c;
+      if(l.o.length>12||l.n.length>12){ n.rewrite+=c; return; }
+      if(PUNCT.test(l.o+l.n)){ n.punct+=c; return; }
+      const box= l.n? t.sub : t.del, key= l.n? l.o+" → "+l.n : l.o;
+      box[key]=(box[key]||0)+c;
+      return;
+    }
     diffMoves(l.o,l.n).forEach(m=>{
       n.move++;
       if(m.k==="punct"){ n.punct++; return; }
@@ -1840,6 +1853,41 @@ function importPairs(before,after,work){
   pairs.forEach(x=>memory.push({o:x.o,n:x.n,w:w,at:at}));
   saveMemory();
   return pairs.length;
+}
+/* 差分メモを読む。初稿が残っていなくても「何を何に直したか」が書いてあれば材料になる。
+   読める形：A → B／「A」→「B」／A を削除／A（削除）／末尾の 3件・×3・（3）は回数 */
+const ARROW=/\s*(?:→|⇒|➝|->|=>|→)\s*/;
+const DELW=/^(?:（?削除）?|削除|削る|消す|トル|なし|×|—|―|-)$/;
+function stripQ(x){ return String(x||"").trim().replace(/^[「『『“"']+|[」』』”"']+$/g,"").trim(); }
+function parseMemo(text){
+  const out=[], skipped=[];
+  String(text||"").replace(/\r\n?/g,"\n").split("\n").forEach(raw=>{
+    let l=raw.trim();
+    if(!l) return;
+    l=l.replace(/^(?:[-*・●○◇◆■□▪▸►]|\d+[.．、)）]|[（(]\d+[)）])\s*/,"");   /* 箇条書きの頭を落とす */
+    if(/^[#＃【\[]/.test(l)) return;                                          /* 見出しは飛ばす */
+    let c=1;
+    const m=l.match(/(?:[（(]?(\d+)\s*[件回箇所か所]?[)）]?|[×x]\s*(\d+))\s*$/);
+    if(m && (m[1]||m[2])){ c=parseInt(m[1]||m[2],10)||1; l=l.slice(0,m.index).trim(); }
+    let o=null, n=null;
+    if(ARROW.test(l)){
+      const parts=l.split(ARROW);
+      if(parts.length>=2){ o=stripQ(parts[0]); n=stripQ(parts.slice(1).join("→")); if(DELW.test(n)) n=""; }
+    }else{
+      const d=l.match(/^(.+?)\s*(?:を|は)?\s*[（(]?\s*(?:削除|削る|消す|トル|取る)\s*[)）]?\s*$/);
+      if(d){ o=stripQ(d[1]); n=""; }
+    }
+    if(o===null||!o||o===n){ skipped.push(raw); return; }
+    out.push({o:o,n:n,c:Math.max(1,Math.min(99,c))});
+  });
+  return {pairs:out, skipped:skipped};
+}
+function importMemo(text,work){
+  const r=parseMemo(text), at=Date.now(), w=(work||"").trim()||"無題";
+  memory=memory.filter(x=>x.w!==w);
+  r.pairs.forEach(x=>memory.push({o:x.o,n:x.n,w:w,at:at,memo:true,c:x.c}));
+  saveMemory();
+  return r;
 }
 function allEdits(){ return (cur&&cur.log?cur.log:[]).concat(memory); }
 
@@ -2057,6 +2105,20 @@ function renderMemList(){
     memory=memory.filter(x=>x.w!==b.dataset.w); saveMemory(); renderMemList(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats);
   });
 }
+$("m-memo-pick").onclick=()=>$("m-memo-file").click();
+$("m-memo-file").onchange=async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+  try{ $("m-memo").value=await f.text(); if(!$("m-title").value.trim()) $("m-title").value=f.name.replace(/\.(txt|md)$/i,""); }
+  catch(err){ toast("読み込めませんでした"); } e.target.value=""; };
+$("m-memo-go").onclick=()=>{
+  const t=$("m-memo").value;
+  if(!t.trim()){ toast("メモを貼ってください"); return; }
+  const r=importMemo(t,$("m-title").value);
+  const n=r.pairs.reduce((a,x)=>a+x.c,0);
+  $("m-memo-stat").textContent = n
+    ? r.pairs.length+"行から"+n+"件を持ち越しました"+(r.skipped.length? "　読めなかった行 "+r.skipped.length+"："+r.skipped.slice(0,3).map(x=>x.trim()).join("／") : "")
+    : "読める行がありませんでした。「A → B」か「A を削除」の形で一行ずつ書いてください";
+  if(n){ $("m-memo").value=""; renderMemList(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats); toast(n+"件の直しを持ち越しました"); }
+};
 $("c-pen").onclick=()=>{ conf.pen=conf.pen!==true; saveConf(); renderConf(); };
 $("c-mine").onclick=()=>{ conf.mine=conf.mine===false; saveConf(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats); renderConf(); };
 $("btn-conf2").onclick=renderConf;
