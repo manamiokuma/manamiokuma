@@ -260,6 +260,21 @@ function scheduled(){return S.episodes.filter(function(e){return e.scheduledAt})
   .sort(function(a,b){return String(a.scheduledAt)<String(b.scheduledAt)?-1:1})}
 function isWriting(w){var n=STEP[w.stage];return n>=2&&n<=5}
 function isPlanning(w){var n=STEP[w.stage];return n===0||n===1}
+function isBook(w){return w.kind==="本"||w.kind==="両方"}
+function sampleState(w){
+  if(w.sampleState==="公開ずみ")return {k:"ok",t:"サンプル公開ずみ"+(w.sampleAt?"（"+w.sampleAt.slice(5).replace("-","/")+"）":"")};
+  if(w.sampleState==="用意した")return {k:"mid",t:"サンプル用意ずみ・未公開"};
+  return {k:"none",t:"サンプル未"};
+}
+function sampleTodo(){
+  return S.works.filter(function(w){
+    return isBook(w)&&w.sampleState!=="公開ずみ"&&STEP[w.stage]>=5;
+  }).sort(function(a,b){
+    var ra=a.releaseId?release(a.releaseId):null,rb=b.releaseId?release(b.releaseId):null;
+    var x=(ra&&ra.eventDate)||"9999",y=(rb&&rb.eventDate)||"9999";
+    return x<y?-1:x>y?1:0;
+  });
+}
 function kindLabel(k){for(var i=0;i<KINDS.length;i++)if(KINDS[i][0]===k)return KINDS[i][1];return "未定"}
 function touch(w){w.updatedAt=today()}
 
@@ -361,6 +376,7 @@ function adopt(d){
   S.series=Array.isArray(d.series)?d.series:[];
   S.releases=Array.isArray(d.releases)?d.releases:[];
   S.settings=Object.assign({time:"19:00",warnDays:3,deadlineDays:21},d.settings||{});
+  S.episodes.forEach(function(e){if(e.pixivUrl==null)e.pixivUrl=""});
   S.v=2;
   /* 旧いかたちからの繰り越し */
   S.works.forEach(function(w){
@@ -374,6 +390,10 @@ function adopt(d){
     if(w.driveState==null)w.driveState="";
     if(w.driveCheckedAt==null)w.driveCheckedAt="";
     if(w.driveHits==null)w.driveHits=0;
+    if(w.sampleState==null)w.sampleState="";
+    if(w.sampleAt==null)w.sampleAt="";
+    if(w.sampleUrl==null)w.sampleUrl="";
+    if(w.pixivUrl==null)w.pixivUrl="";
   });
 }
 function save(){
@@ -636,6 +656,12 @@ function nextMoves(){
     h+=move(esc(stale[0].title),diffDays(stale[0].updatedAt,t)+"日ぶん動いていません（"+stale[0].stage+"）",
       'data-act="work" data-id="'+stale[0].id+'"');n++;
   }
+  var st0=sampleTodo();
+  if(n<3&&st0.length){
+    var r0=st0[0].releaseId?release(st0[0].releaseId):null;
+    h+=move(esc(st0[0].title),"サンプルがまだ出ていません"+(r0&&r0.eventDate?"（"+md(r0.eventDate)+"頒布）":""),
+      'data-act="work" data-id="'+st0[0].id+'"');n++;
+  }
   var undated=S.episodes.filter(function(e){return e.checked&&!e.scheduledAt});
   if(n<3&&undated.length){
     var w=work(undated[0].workId);
@@ -692,6 +718,8 @@ function vWorks(){
         (w.charsNow?'<span>'+num(w.charsNow)+'字</span>':"")+
         (es.length?'<span>'+es.length+'話</span>':"")+
         (rl?'<span class="pill ai">'+esc(rl.short||rl.title)+'</span>':"")+
+        (isBook(w)&&sampleState(w).k==="ok"?'<span class="pill md">サンプル済</span>':
+         isBook(w)&&STEP[w.stage]>=5?'<span class="pill shu">サンプル未</span>':"")+
         (function(){var b=backupState(w);
           return b.k==="ok"?'<span class="pill md">控えあり</span>':
                  b.k==="old"?'<span class="pill shu">控えが古い</span>':"";})()+
@@ -757,6 +785,21 @@ function vWork(){
      '</select></label>';
   h+='<label class="field"><span>覚え書き</span><textarea style="min-height:80px" data-w="'+w.id+'" data-f="note">'+esc(w.note)+'</textarea></label>';
   h+='</section>';
+  if(isBook(w)){
+    var sm=sampleState(w);
+    h+='<div class="sep"></div><section><h2>サンプル</h2>';
+    h+='<div class="wf" style="margin:0 0 6px"><span class="pill'+(sm.k==="ok"?" md":sm.k==="mid"?" ai":"")+'">'+sm.t+'</span></div>';
+    h+='<div class="stepper">'+
+       ["用意した","公開ずみ"].map(function(k){
+         return '<button class="'+(w.sampleState===k?"on":"")+'" data-act="sample" data-id="'+w.id+'" data-s="'+k+'">'+k+'</button>';
+       }).join("")+'</div>';
+    h+='<div class="hint">押すと切り替わります。もう一度押すと「未」に戻ります。公開ずみにすると、その日が入ります。</div>';
+    h+='<div class="pair">'+
+       '<label class="field half"><span>公開した日</span><input type="date" value="'+esc(w.sampleAt)+'" data-w="'+w.id+'" data-f="sampleAt"></label>'+
+       '<label class="field half"><span>置き場</span><input value="'+esc(w.sampleUrl)+'" data-w="'+w.id+'" data-f="sampleUrl" placeholder="pixiv / X のURL"></label></div>';
+    h+='<div class="hint">R-18は画像の構図に制約があります。本文サンプルを画像にするときは、性描写の直前ではなく場面の切れ目で切る（book-promotion）。サンプル公開は旗艦ポストを再掲するきっかけにもなります。</div>';
+    h+='</section>';
+  }
   h+='<div class="sep"></div><section><h2>原稿の置き場</h2>';
   var bs=backupState(w);
   h+='<div class="wf" style="margin:0 0 8px"><span class="pill'+(bs.k==="ok"?" md":bs.k==="old"?" shu":"")+'">'+bs.t+'</span>'+
@@ -791,6 +834,9 @@ function vWork(){
   h+='</section>';
   h+='<div class="sep"></div><section><h2>pixivの話<span class="n">'+es.length+'本</span></h2>';
   if(w.kind==="本")h+='<div class="hint shu">同人誌にする作品です。pixivには出さない方針。</div>';
+  if(w.pixivUrl)h+='<a class="link" href="'+esc(w.pixivUrl)+'" target="_blank" rel="noopener">pixivのシリーズを開く</a>';
+  h+='<label class="field"><span>pixivのURL（シリーズ）</span><input value="'+esc(w.pixivUrl)+'" data-w="'+w.id+'" data-f="pixivUrl" placeholder="https://www.pixiv.net/user/.../series/..."></label>';
+  h+='<div class="hint">分割した話はpixivのシリーズにまとめる前提です。作品名がそのままシリーズ名になります。</div>';
   if(!es.length)h+='<div class="empty">まだ分けていません。</div>';
   es.forEach(function(e){
     var d=dpart(e.scheduledAt);
@@ -872,6 +918,20 @@ function vBooks(){
     h+='</section>';
   }
 
+  var st=sampleTodo();
+  if(st.length){
+    h+='<div class="sep"></div><section><h2>サンプルがまだ<span class="n">'+st.length+'冊</span></h2>';
+    st.forEach(function(w){
+      var rl=w.releaseId?release(w.releaseId):null;
+      h+='<button class="row" data-act="work" data-id="'+w.id+'">'+
+        '<span class="body"><span class="t">'+esc(w.title)+'</span><span class="m">'+
+        stageName(w)+'<span class="pill'+(sampleState(w).k==="mid"?" ai":"")+'">'+esc(sampleState(w).t)+'</span>'+
+        (rl?'<span>'+esc(rl.short||rl.title)+(rl.eventDate?' '+md(rl.eventDate):"")+'</span>':"")+
+        '</span></span><span class="go">›</span></button>';
+    });
+    h+='<div class="hint">入稿テキストまで行った本だけを出しています。サンプル公開は、旗艦ポストを再掲するきっかけになります。</div>';
+    h+='</section>';
+  }
   h+='<div class="sep"></div><section><h2>シリーズ</h2>';
   if(!S.series.length)h+='<div class="empty">まだ登録がありません。</div>';
   S.series.forEach(function(s){
@@ -896,11 +956,13 @@ function relRow(r,t){
   }else if(r.deadlineAt){cd="入稿日すぎ";cls=" near"}
   else{cd="入稿日 未定"}
   if(r.state==="入稿済"){cd="入稿ずみ";cls=" ok"}
+  var smNo=ws.filter(function(w){return isBook(w)&&STEP[w.stage]>=5&&sampleState(w).k!=="ok"}).length;
   return '<button class="rel" data-act="release" data-id="'+r.id+'">'+
     '<div class="rt">'+esc(r.title)+'</div>'+
     '<div class="rd">'+(r.eventDate?longDate(r.eventDate)+" "+wdOf(r.eventDate)+"曜":esc(r.dateNote||"時期未定"))+
     '　／　'+ws.length+'冊（完成'+done+'）</div>'+
     '<span class="cd'+cls+'">'+cd+'</span>'+
+    (smNo?'<span class="cd near" style="margin-left:8px">サンプル未 '+smNo+'冊</span>':"")+
     '</button>';
 }
 function vRelease(){
@@ -927,6 +989,8 @@ function vRelease(){
       '<span class="body"><span class="t">'+esc(w.title)+'</span>'+steps(w)+'<span class="m">'+
       stageName(w)+(w.chaptersTotal?'<span>'+(w.chaptersDone||0)+'/'+w.chaptersTotal+'章</span>':"")+
       (w.charsNow?'<span>'+num(w.charsNow)+'字</span>':"")+
+      (isBook(w)?'<span class="pill'+(sampleState(w).k==="ok"?" md":STEP[w.stage]>=5?" shu":"")+'">'+
+        esc(sampleState(w).t)+'</span>':"")+
       '</span></span><span class="go">›</span></button>';
   });
   h+='<button class="btn" data-act="pick" data-id="'+r.id+'" data-k="release">載せる本を選ぶ</button>';
@@ -1023,7 +1087,8 @@ function schedRow(e,i,arr){
      '<span class="t">'+esc(e.title)+'</span><span class="m">'+
      (e.isR18?'<span class="r18">R-18</span>':"")+'<span class="tabular">'+num(e.chars)+'字</span>'+
      (e.checked?"":'<span class="pill">未検査</span>')+
-     (tpart(e.scheduledAt)>="20:00"?'<span class="pill shu">20時すぎ</span>':"")+'</span></button>';
+     (tpart(e.scheduledAt)>="20:00"?'<span class="pill shu">20時すぎ</span>':"")+
+     (e.pixivUrl?'<span class="pill md">出しました</span>':"")+'</span></button>';
   h+='<span style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex:none">'+
      '<button class="tg" style="width:28px;height:24px" data-act="up" data-id="'+e.id+'"'+(i===0?" disabled":"")+'>↑</button>'+
      '<button class="tg" style="width:28px;height:24px" data-act="down" data-id="'+e.id+'"'+(i===arr.length-1?" disabled":"")+'>↓</button></span>';
@@ -1054,6 +1119,9 @@ function vEp(){
      '<button class="btn'+(e.checked?" fill":"")+'" style="margin-top:6px" data-act="tg-check" data-id="'+e.id+'">'+(e.checked?"検査済":"未検査")+'</button>'+
      '<button class="btn'+(e.reserved?" fill":"")+'" style="margin-top:6px" data-act="tg-res" data-id="'+e.id+'">'+(e.reserved?"予約ずみ":"未予約")+'</button></div>';
   h+='<div class="hint">左は文体検査と目視、右はpixivの予約に入れ終えたかどうかです。</div>';
+  if(e.pixivUrl)h+='<a class="link" href="'+esc(e.pixivUrl)+'" target="_blank" rel="noopener">pixivで開く</a>';
+  h+='<label class="field"><span>pixivのURL（この話）</span><input value="'+esc(e.pixivUrl)+'" data-e="'+e.id+'" data-f="pixivUrl" placeholder="https://www.pixiv.net/novel/show.php?id=..."></label>';
+  h+='<div class="hint">出したあとに貼っておくと、あとで引くときに探さずに済みます。</div>';
   h+='<label class="field"><span>キャプション</span><textarea data-e="'+e.id+'" data-f="caption" placeholder="pixivのキャプション本文">'+esc(e.caption)+'</textarea></label>';
   h+='<button class="link" data-act="copy-cap" data-id="'+e.id+'">前の話からキャプションを写す</button>';
   h+='<section><h2>タグ<span class="n">'+(e.tags||[]).length+'</span></h2><div class="tags">';
@@ -1159,7 +1227,7 @@ function addEpisode(workId){
   var es=epsOf(workId),w=work(workId),n=es.length+1;
   S.episodes.push({id:uid(),workId:workId,index:n,title:(w?w.title:"")+"（"+n+"）",chars:0,
     isR18:false,checked:false,caption:"",tags:es.length?(es[es.length-1].tags||[]).slice():[],
-    scheduledAt:null,reserved:false});
+    scheduledAt:null,reserved:false,pixivUrl:""});
   save();render();
 }
 function parseTags(s){
@@ -1228,6 +1296,12 @@ document.addEventListener("click",function(ev){
     if(!wb||!f)return;
     bindDrive(wb,f);view.hits=null;save();render();return;
   }
+  if(act==="sample"){
+    var wsm=work(id),k=b.getAttribute("data-s");if(!wsm)return;
+    if(wsm.sampleState===k){wsm.sampleState="";if(k==="公開ずみ")wsm.sampleAt=""}
+    else{wsm.sampleState=k;if(k==="公開ずみ"&&!wsm.sampleAt)wsm.sampleAt=today()}
+    touch(wsm);save();render();return;
+  }
   if(act==="dr-state"){
     var ws=work(id),st2=b.getAttribute("data-s");if(!ws)return;
     ws.driveState=ws.driveState===st2?"":st2;
@@ -1261,7 +1335,8 @@ document.addEventListener("click",function(ev){
   if(act==="new-work"){
     var w3={id:uid(),title:"新しい作品",fandom:"",kind:"未定",stage:"構想",chaptersDone:0,
       chaptersTotal:0,charsNow:0,charsTarget:0,seriesId:"",releaseId:"",note:"",updatedAt:today(),
-      driveUrl:"",driveTitle:"",driveModified:"",driveQuery:"",driveState:"",driveCheckedAt:"",driveHits:0};
+      driveUrl:"",driveTitle:"",driveModified:"",driveQuery:"",driveState:"",driveCheckedAt:"",driveHits:0,
+      sampleState:"",sampleAt:"",sampleUrl:"",pixivUrl:""};
     S.works.unshift(w3);save();go({name:"work",workId:w3.id});return;
   }
   if(act==="del-work"){
@@ -1360,7 +1435,7 @@ document.getElementById("app").addEventListener("change",function(ev){
     if(f==="chaptersDone"||f==="chaptersTotal"||f==="charsNow"||f==="charsTarget")w[f]=+v||0;
     else w[f]=v;
     touch(w);save();
-    if(f!=="note"&&f!=="fandom"&&f!=="driveUrl"&&f!=="driveTitle")render();
+    if(f!=="note"&&f!=="fandom"&&f!=="driveUrl"&&f!=="driveTitle"&&f!=="pixivUrl"&&f!=="sampleUrl")render();
     return;
   }
   if(rid){
@@ -1379,7 +1454,7 @@ document.getElementById("app").addEventListener("change",function(ev){
     else if(f==="time"){if(e.scheduledAt)e.scheduledAt=joinDT(dpart(e.scheduledAt),v||"19:00")}
     else e[f]=v;
     save();
-    if(f==="date"||f==="time"||f==="isR18")render();
+    if(f==="date"||f==="time"||f==="isR18"||f==="pixivUrl")render();
     return;
   }
 });
