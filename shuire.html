@@ -1146,7 +1146,24 @@ function advBlock(text){
     (rest?'<p class="advrest">'+esc(rest)+'</p>':'')+
     '<button class="advrest" id="sh-advdel" style="margin-top:8px;text-decoration:underline">この案を消す</button></div>';
 }
-function closeSheet(){ $("veil").classList.add("hide"); $("card").innerHTML=""; sheetK=-1; }
+let askRes=null;
+function closeSheet(){ $("veil").classList.add("hide"); $("card").innerHTML=""; sheetK=-1; if(askRes){ const r=askRes; askRes=null; r(null); } }
+/* 確かめる小窓。confirm の代わりは真偽、opts.input なら文字列（やめたら null） */
+function ask(msg,opts){
+  const o=opts||{};
+  return new Promise(res=>{
+    askRes=v=>{ res(o.input? v : !!v); };
+    $("card").innerHTML='<p style="margin:0 0 14px;font-size:14px;line-height:1.85;color:var(--kami);white-space:pre-wrap">'+esc(msg)+'</p>'+
+      (o.input? '<input id="ask-in" value="'+esc(o.value||"")+'" inputmode="'+(o.numeric?"numeric":"text")+'" style="width:100%;font-size:16px;padding:10px 11px;border:1px solid var(--ai3);border-radius:2px;background:var(--ai2);color:var(--kami);font-family:var(--gothic)">' : '')+
+      '<div class="row" style="margin-top:14px"><button class="go" id="ask-ok">'+esc(o.ok||"はい")+'</button><button class="go quiet" id="ask-no">'+esc(o.no||"やめる")+'</button></div>';
+    $("veil").classList.remove("hide");
+    const done=v=>{ const r=askRes; askRes=null; $("veil").classList.add("hide"); $("card").innerHTML=""; if(r) r(v); };
+    $("ask-ok").onclick=()=>done(o.input? $("ask-in").value : true);
+    $("ask-no").onclick=()=>done(o.input? null : false);
+    if(o.input){ const i=$("ask-in"); try{ i.focus({preventScroll:true}); }catch(e){ i.focus(); }
+      i.onkeydown=e=>{ if(e.key==="Enter"&&!e.isComposing&&e.keyCode!==229){ e.preventDefault(); done(i.value); } }; }
+  });
+}
 function applyFix(){
   const b=cur.blocks[pos], ls=lines(b.t), k=sheetK, v=$("sh-t").value;
   const org=ls[k], before=lineText(b,ls,k);
@@ -1176,7 +1193,7 @@ function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rule
   delete conf.autoWord;
   if(!conf.quota) conf.quota=3;
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
-  loadDir(); loadMemory();
+  loadDir(); loadMemory(); warmHost();
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
 })();
@@ -1265,12 +1282,27 @@ function buildDocx(paras){
   return zipStore([{name:"[Content_Types].xml",data:enc.encode(ct)},{name:"_rels/.rels",data:enc.encode(rels)},
     {name:"word/_rels/document.xml.rels",data:enc.encode(drels)},{name:"word/document.xml",data:enc.encode(doc)}]);
 }
-function save(bytes,name,mime,quiet){
+/* claude.ai の枠の中では a.download が効かないので、枠の主（downloads）に保存を頼む。
+   それ以外（ファイルを直接開いたとき）はいつものダウンロード */
+let hostDl=null;
+function warmHost(){
+  try{ if(window.claude&&typeof window.claude.use==="function") hostDl=window.claude.use("downloads").catch(()=>null); }catch(e){ hostDl=null; }
+}
+async function save(bytes,name,mime,quiet){
+  if(hostDl){
+    let d=null; try{ d=await hostDl; }catch(e){ d=null; }
+    if(d){
+      try{ await d.save({filename:name,data:bytes}); if(!quiet) toast("保存しました　"+name); return true; }
+      catch(e){ if(e&&e.code==="declined"){ toast("保存をやめました"); return false; }
+                if(e&&(e.code==="rate_limited")){ toast("少し待ってからもう一度押してください"); return false; } }
+    }
+  }
   const b=new Blob([bytes],{type:mime||"application/vnd.openxmlformats-officedocument.wordprocessingml.document"});
   const u=URL.createObjectURL(b), a=document.createElement("a");
   a.href=u; a.download=name; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(u),4000);
   if(!quiet) toast("書き出しました　"+name);
+  return true;
 }
 /* 控えの置き場。フォルダを一度決めておけば、同じ一つのファイルに上書きしていく。
    フォルダの取っ手はこの端末の中（IndexedDB）に覚えておく */
@@ -1828,10 +1860,10 @@ function ruleHits(row){
   cur.blocks.forEach((blk,i)=>{ const ls=lines(blk.t); ls.forEach((x,k)=>{ if(x===null) return; const t=lineText(blk,ls,k); if(t.indexOf(a)>=0) hits.push({b:i,k:k,t:t}); }); });
   return {a:a,b:b,hits:hits};
 }
-function applyRule(row){
+async function applyRule(row){
   const r=ruleHits(row); if(!r||!r.hits.length) return 0;
   const ex=r.hits.slice(0,3).map(h=>"　"+h.t.slice(0,30)+(h.t.length>30?"…":"")).join("\n");
-  if(!confirm("「"+r.a+"」を"+(r.b?"「"+r.b+"」にして":"削って")+"、"+r.hits.length+"行にまとめて当てます。一行ずつ元に戻せます。\n\n"+ex)) return 0;
+  if(!await ask("「"+r.a+"」を"+(r.b?"「"+r.b+"」にして":"削って")+"、"+r.hits.length+"行にまとめて当てます。一行ずつ元に戻せます。\n\n"+ex,{ok:"当てる"})) return 0;
   let n=0;
   r.hits.forEach(h=>{
     const nv=h.t.split(r.a).join(r.b); if(nv===h.t) return;
@@ -2118,8 +2150,8 @@ function renderReport(){
     html+='<p class="lead">まだ直しがありません。</p>';
   }
   $("rp-body").innerHTML=html;
-  $("rp-body").querySelectorAll("button[data-apply]").forEach(b=>b.onclick=()=>{
-    const n=applyRule(lastCand[+b.dataset.apply]);
+  $("rp-body").querySelectorAll("button[data-apply]").forEach(b=>b.onclick=async()=>{
+    const n=await applyRule(lastCand[+b.dataset.apply]);
     if(n){ toast(n+"行に当てました。控えに「もと → 直し」で残ります"); renderReport(); }
   });
   const c=$("rp-carry"); if(c) c.onclick=async()=>{ try{ await navigator.clipboard.writeText(carryText()); toast("写しました。執筆のセッションの頭に貼ってください"); }catch(e){ toast("うまく写せませんでした。書き出しをお使いください"); } };
@@ -2369,12 +2401,12 @@ $("p-start").onclick=()=>{
   toast(cur.pass+"回目の通し　"+kindOf(cur.kind).name);
 };
 
-$("btn-resize").onclick=()=>{
+$("btn-resize").onclick=async()=>{
   const now=cur.size||2200;
-  const v=prompt("一区切りの字数を決め直します。\n直した本文はそのまま残りますが、朱・付箋・覚え書き・控えの「もと→直し」は消えます。",String(now));
+  const v=await ask("一区切りの字数を決め直します。\n直した本文はそのまま残りますが、朱・付箋・覚え書き・控えの「もと→直し」は消えます。",{input:true,numeric:true,value:String(now),ok:"この字数で"});
   if(v===null) return;
   const size=Math.max(400,Math.min(8000,parseInt(v,10)||now));
-  if(!confirm("朱・付箋・覚え書き・控えの「もと→直し」が消えます。先に控えを書き出しておかなくて大丈夫ですか。")) return;
+  if(!await ask("朱・付箋・覚え書き・控えの「もと→直し」が消えます。先に控えを書き出しておかなくて大丈夫ですか。",{ok:"割り直す"})) return;
   const text=workText(cur);
   cur.blocks=cutBlocks(text,size); cur.size=size;
   yure=buildYure(cur); penCache=readWork(cur,kindOf(cur.kind).cats);
@@ -2382,15 +2414,15 @@ $("btn-resize").onclick=()=>{
 };
 
 $("btn-word").onclick=()=>wordSnapshot(true);
-$("btn-close").onclick=()=>{
+$("btn-close").onclick=async()=>{
   if(cur.closed){
-    if(!confirm("校了を取り消して、また朱を入れられるようにしますか。")) return;
+    if(!await ask("校了を取り消して、また朱を入れられるようにしますか。",{ok:"取り消す"})) return;
     cur.closed=false; delete cur.closedAt;
     const h=cur.history, last=h[h.length-1];
     if(last&&last.by==="close"&&last.n===cur.pass) h.pop();
   }else{
     const rest=cur.blocks.filter(b=>!b.done).length;
-    if(rest && !confirm("まだ"+rest+"区切り残っています。それでも校了にしますか。")) return;
+    if(rest && !await ask("まだ"+rest+"区切り残っています。それでも校了にしますか。",{ok:"校了にする"})) return;
     cur.history.push(Object.assign(passRecord(),{by:"close"}));
     cur.closed=true; cur.closedAt=jdate(); sealNew=true;
   }
@@ -2399,8 +2431,8 @@ $("btn-close").onclick=()=>{
   renderWork(); window.scrollTo(0,0);
   if(cur.closed){ $("w-sheet").classList.add("finished"); toast("校了。"+cur.pass+"回通しました"); }
 };
-$("btn-del").onclick=()=>{
-  if(!confirm("「"+cur.title+"」を本文ごと消しますか。元に戻せません。")) return;
+$("btn-del").onclick=async()=>{
+  if(!await ask("「"+cur.title+"」を本文ごと消しますか。元に戻せません。",{ok:"消す"})) return;
   jdel("shuire:work:"+curId);
   index=index.filter(w=>w.id!==curId); jset(K_INDEX,index);
   cur=null; curId=null; renderHome(); view("home"); toast("消しました");

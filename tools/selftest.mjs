@@ -44,8 +44,8 @@ vm.runInContext(src, ctx, { filename: "shuire.html" });
 
 /* ---- 点検の道具 ---- */
 let ok = 0, ng = 0;
-const run = (name, fn) => {
-  try { fn(); console.log("  ✓ " + name); ok++; }
+const run = async (name, fn) => {
+  try { const r = fn(); if (r && r.then) await r; console.log("  ✓ " + name); ok++; }
   catch (e) { console.log("  ✗ " + name + "\n      " + e.message); ng++; }
 };
 const eq = (a, b, m) => { if (a !== b) throw new Error((m || "") + "\n      得た値: " + JSON.stringify(a) + "\n      望む値: " + JSON.stringify(b)); };
@@ -67,37 +67,37 @@ const 本文 = [
 ].join("\n");
 
 console.log("\n分割と復元");
-run("章の頭で必ず切れる", () => {
+await run("章の頭で必ず切れる", () => {
   const bs = ev(`cutBlocks(${JSON.stringify(本文)}, 2200)`);
   eq(bs.length, 2, "章が二つなので二区切りのはず");
   truthy(bs[1].t.indexOf("第二章") >= 0, "二区切り目が第二章から始まっていない");
 });
-run("字数でも切れる", () => {
+await run("字数でも切れる", () => {
   const long = "あ".repeat(300) + "。\n" + "い".repeat(300) + "。";
   const bs = ev(`cutBlocks(${JSON.stringify(long)}, 200)`);
   truthy(bs.length >= 3, "字数で割れていない（" + bs.length + "区切り）");
 });
-run("区切って復元すると元の本文に戻る", () => {
+await run("区切って復元すると元の本文に戻る", () => {
   ev(`__w = {blocks: cutBlocks(${JSON.stringify(本文)}, 2200)}`);
   eq(ev("workText(__w)"), 本文.replace(/^\n+|\n+$/g, ""), "復元が一致しない");
 });
-run("空行が消えない", () => {
+await run("空行が消えない", () => {
   const t = "あ。\n\n\nい。";
   ev(`__w2 = {blocks: cutBlocks(${JSON.stringify(t)}, 2200)}`);
   eq(ev("workText(__w2)"), t);
 });
-run("直した行が本文に反映される", () => {
+await run("直した行が本文に反映される", () => {
   ev(`__w3 = {blocks: cutBlocks("あああ。いいい。", 2200)}; __w3.blocks[0].edits = {1: "ううう。"}`);
   eq(ev("workText(__w3)"), "あああ。ううう。");
 });
-run("直しても他の行の番号がずれない", () => {
+await run("直しても他の行の番号がずれない", () => {
   ev(`__w4 = {blocks: cutBlocks("一。二。三。", 2200)}; __w4.blocks[0].edits = {0: "壱。改行も\\n入る。"}`);
   eq(ev("lines(__w4.blocks[0].t).length"), 3, "原文の行数は不変であるべき");
   eq(ev("workText(__w4)"), "壱。改行も\n入る。二。三。");
 });
 
 console.log("\n下読み（鉛筆）");
-run("機械の下読みは、既定では止まっている", () => {
+await run("機械の下読みは、既定では止まっている", () => {
   eq(ev("conf.pen"), false, "既定で点いている");
   ev(`__b0 = {t: "　そうか…と彼は言った。", marks: [], edits: {}, note: "", done: false}`);
   eq(Object.keys(ev("readBlock(__b0, null)")).length, 0, "止まっているのに鉛筆が出た");
@@ -111,28 +111,28 @@ const 引く = (text, rule) => {
   if (rule && hit.indexOf(rule) < 0) throw new Error("「" + rule + "」を拾えなかった。拾ったのは " + JSON.stringify(hit));
   return hit;
 };
-run("三点リーダの奇数", () => 引く("　そうか…と彼は言った。", "leader"));
-run("！のあとの空き", () => 引く("　待て！彼は走った。", "bang"));
-run("かっこの不対応", () => 引く("　彼は「行く、と言った。", "bracket"));
-run("句点で割れた会話文を誤って叱らない", () => {
+await run("三点リーダの奇数", () => 引く("　そうか…と彼は言った。", "leader"));
+await run("！のあとの空き", () => 引く("　待て！彼は走った。", "bang"));
+await run("かっこの不対応", () => 引く("　彼は「行く、と言った。", "bracket"));
+await run("句点で割れた会話文を誤って叱らない", () => {
   const hit = 引く("「ええ。夕方までは続くそうです」");
   truthy(hit.indexOf("bracket") < 0, "対応しているかっこに鉛筆が出た");
 });
-run("行頭の字下げ", () => 引く("雨が降っていた。", "indent"));
-run("半角の記号", () => 引く("　そうか?と彼は聞いた。", "halfmark"));
-run("長い一文", () => 引く("　" + "あ".repeat(95) + "。", "long"));
-run("読点の多さ", () => 引く("　あ、い、う、え、お、か、き。", "touten"));
-run("文末の重なり", () => 引く("　朝が来た。光が差した。鳥が鳴いた。歩き出した。", "tail"));
-run("同じ語のくり返し", () => 引く("　夕暮れの光が夕暮れの色を濃くした。", "repeat"));
-run("会話文は字下げで叱られない", () => {
+await run("行頭の字下げ", () => 引く("雨が降っていた。", "indent"));
+await run("半角の記号", () => 引く("　そうか?と彼は聞いた。", "halfmark"));
+await run("長い一文", () => 引く("　" + "あ".repeat(95) + "。", "long"));
+await run("読点の多さ", () => 引く("　あ、い、う、え、お、か、き。", "touten"));
+await run("文末の重なり", () => 引く("　朝が来た。光が差した。鳥が鳴いた。歩き出した。", "tail"));
+await run("同じ語のくり返し", () => 引く("　夕暮れの光が夕暮れの色を濃くした。", "repeat"));
+await run("会話文は字下げで叱られない", () => {
   const hit = 引く("「行くのか」");
   truthy(hit.indexOf("indent") < 0, "会話文に字下げの鉛筆が出た");
 });
-run("整った文には鉛筆が出ない", () => {
+await run("整った文には鉛筆が出ない", () => {
   const hit = 引く("　雨が降っていた。窓の外は白く煙っている。");
   eq(hit.length, 0, "余計に拾った: " + JSON.stringify(hit));
 });
-run("表記のゆれは少ないほうに出る", () => {
+await run("表記のゆれは少ないほうに出る", () => {
   const t = "　その事を思った。そのことを思った。そのことを言った。そのことを見た。";
   ev(`__y = {blocks: cutBlocks(${JSON.stringify(t)}, 2200)}; yure = buildYure(__y)`);
   const res = ev("readBlock(__y.blocks[0], null)");
@@ -142,13 +142,13 @@ run("表記のゆれは少ないほうに出る", () => {
   eq(hits[0], 0, "漢字（少数派）の行に出るべき");
   ev("yure = null");
 });
-run("設定で消した項目は出ない", () => {
+await run("設定で消した項目は出ない", () => {
   ev(`conf.rules.indent = false`);
   const hit = 引く("雨が降っていた。");
   truthy(hit.indexOf("indent") < 0, "消したのに出た");
   ev(`conf.rules.indent = true`);
 });
-run("通しの種類で絞られる", () => {
+await run("通しの種類で絞られる", () => {
   ev(`__b2 = {t: "雨が降っていた。" + "あ".repeat(95) + "。", marks: [], edits: {}, note: "", done: false}`);
   const typo = ev(`(()=>{const r=readBlock(__b2, ["hyoki"]); const o=[]; for(const k in r) r[k].forEach(x=>o.push(x.id)); return o;})()`);
   truthy(typo.indexOf("indent") >= 0, "誤字の通しで字下げが出ていない");
@@ -166,40 +166,40 @@ ev(`migrate(__t); cur = __t; curId = "x"; index = []; yure = null`);
 ev(`cur.blocks[0].fusen = [3]; cur.blocks[0].note = "ここの語尾が重い"`);   /* 二段落目の一文 */
 let 票 = ev("talkText()");
 
-run("相談票に番号と印が入る", () => {
+await run("相談票に番号と印が入る", () => {
   truthy(票.indexOf("[F1]") >= 0, "番号がない");
   truthy(票.indexOf("▼ 　その事について、彼は何も言わなかった。") >= 0, "相談する行がない");
   truthy(票.indexOf("1区切り目 4行目") >= 0, "場所が書かれていない");
 });
-run("前後の文が文脈として付く", () => {
+await run("前後の文が文脈として付く", () => {
   truthy(票.indexOf("前：　雨が降っていた。") >= 0, "前の文がない");
   truthy(票.indexOf("後：　彼は窓辺に立った。") >= 0, "後の文がない");
 });
-run("覚え書きと、返事の形の指定が入る", () => {
+await run("覚え書きと、返事の形の指定が入る", () => {
   truthy(票.indexOf("この区切りの覚え書き：ここの語尾が重い") >= 0, "覚え書きが渡らない");
   truthy(票.indexOf("案：") >= 0 && 票.indexOf("見立て：") >= 0, "返事の形が書かれていない");
   truthy(票.indexOf("いまは「誤字と表記」の通しです") >= 0, "いまどの観点で読んでいるかが伝わらない");
 });
-run("同じ区切りの覚え書きは一度だけ書く", () => {
+await run("同じ区切りの覚え書きは一度だけ書く", () => {
   ev(`cur.blocks[0].fusen = [1, 3]`);
   const t = ev("talkText()");
   eq(t.split("この区切りの覚え書き：").length - 1, 1, "同じ覚え書きが何度も出ている");
   ev(`cur.blocks[0].fusen = [3]`);
 });
-run("相談票が正本のスキルを名指しする", () => {
+await run("相談票が正本のスキルを名指しする", () => {
   const t = ev("talkText()");
   truthy(t.indexOf("【先に開いてほしいスキル】") >= 0, "見出しがない");
   truthy(t.indexOf("・writing-style（文体の正本）") >= 0, "文体の正本が挙がっていない");
   truthy(t.indexOf("・r18-craft") >= 0, "R18の様式が挙がっていない（既定では入る）");
   truthy(t.indexOf("記憶ではなく上のスキルに従って") >= 0, "記憶で答えないよう頼んでいない");
 });
-run("世界を選ぶとその設定資料が挙がる", () => {
+await run("世界を選ぶとその設定資料が挙がる", () => {
   ev(`cur.world = "lukaen-omega"`);
   const t = ev("talkText()");
   truthy(t.indexOf("lukaen-omega-reference") >= 0, "シリーズの正本がない");
   truthy(t.indexOf("genshin-reference") >= 0, "併用すべき原作軸の正本がない");
 });
-run("併用しない組み合わせは、開かないよう書き添える", () => {
+await run("併用しない組み合わせは、開かないよう書き添える", () => {
   ev(`cur.world = "lukaen-idol"`);
   const t = ev("talkText()");
   truthy(t.indexOf("lukaen-idol-reference") >= 0, "シリーズの正本がない");
@@ -207,20 +207,20 @@ run("併用しない組み合わせは、開かないよう書き添える", () 
   const head = t.slice(0, t.indexOf("【お願いすること】"));
   truthy(head.indexOf("・genshin-reference") < 0, "開かないはずの正本を挙げてしまっている");
 });
-run("R18のない作品では r18-craft を挙げない", () => {
+await run("R18のない作品では r18-craft を挙げない", () => {
   ev(`cur.world = "zensetsu"; cur.r18 = true`);
   const t = ev("talkText()");
   truthy(t.indexOf("zensetsu-reference") >= 0, "シリーズの正本がない");
   truthy(t.indexOf("・r18-craft") < 0, "全年齢の作品にR18の様式を挙げている");
   truthy(t.indexOf("r18-craft は開かないでください") >= 0, "開かない理由が書かれていない");
 });
-run("そのほかのスキルも書き添えられる", () => {
+await run("そのほかのスキルも書き添えられる", () => {
   ev(`cur.world = "none"; cur.r18 = false; cur.moreSkills = "fanfic-production、rework-design"`);
   const t = ev("talkText()");
   truthy(t.indexOf("・fanfic-production") >= 0 && t.indexOf("・rework-design") >= 0, "書き足したスキルが出ない");
   ev(`cur.moreSkills = ""; cur.world = "none"; cur.r18 = true`);
 });
-run("同じ段落に続けて貼った付箋は、ひとつづきの相談になる", () => {
+await run("同じ段落に続けて貼った付箋は、ひとつづきの相談になる", () => {
   ev(`cur.blocks[0].fusen = [0, 1]; cur.blocks[0].wide = {on:false, memo:""}`);   /* 一段落目の二文 */
   const items = ev("talkItems()");
   eq(items.length, 1, "続きの範囲が一件にまとまらない");
@@ -232,17 +232,17 @@ run("同じ段落に続けて貼った付箋は、ひとつづきの相談にな
   eq(本体.split("▼ ").length - 1, 2, "範囲の行が全部は出ていない");
   truthy(本体.indexOf("▼ 　雨が降っていた。") >= 0 && 本体.indexOf("▼ 窓の外は白く煙っている。") >= 0, "範囲の中身が違う");
 });
-run("段落をまたぐと別々の相談になる", () => {
+await run("段落をまたぐと別々の相談になる", () => {
   ev(`cur.blocks[0].fusen = [1, 3]`);   /* 一段落目の末と、二段落目の頭 */
   const items = ev("talkItems()");
   eq(items.length, 2, "段落をまたいでまとめてしまう");
 });
-run("離れた付箋は別々の相談になる", () => {
+await run("離れた付箋は別々の相談になる", () => {
   ev(`cur.blocks[0].fusen = [1, 5]`);
   const items = ev("talkItems()");
   eq(items.length, 2, "離れているのにまとめてしまう");
 });
-run("区切りまるごとの相談は、全文を添えて出す", () => {
+await run("区切りまるごとの相談は、全文を添えて出す", () => {
   ev(`cur.blocks[0].fusen = []; cur.blocks[0].wide = {on:true, memo:"なんとなく変"}`);
   const items = ev("talkItems()");
   eq(items.length, 1, "まるごとが一件にならない");
@@ -253,47 +253,47 @@ run("区切りまるごとの相談は、全文を添えて出す", () => {
   truthy(t.indexOf("本文：") >= 0 && t.indexOf("　彼は窓辺に立った。") >= 0, "区切りの全文が入っていない");
   truthy(t.indexOf("手触り：なんとなく変") >= 0, "手触りが渡らない");
 });
-run("言葉にできていない前提で頼んでいる", () => {
+await run("言葉にできていない前提で頼んでいる", () => {
   const t = ev("talkText()");
   truthy(t.indexOf("言葉にできていない") >= 0, "曖昧なままでよいと伝わらない");
   truthy(t.indexOf("勝手に決めつけず") >= 0, "決めつけないよう頼んでいない");
   truthy(t.indexOf("何が起きているのかを言い当てて") >= 0, "まず言い当ててほしいと頼んでいない");
 });
-run("まるごとの相談にも案が返ってくる", () => {
+await run("まるごとの相談にも案が返ってくる", () => {
   ev("talkText()");
   const r = ev(`importAdvice(${JSON.stringify("[F1]\n見立て：場面の時間が飛んでいます。\n案：一文足して間を作る。")})`);
   eq(r.n, 1, "取り込めた件数");
   truthy(ev("cur.blocks[0].advice.all") !== undefined, "まるごとの置き場に入っていない");
   ev(`cur.blocks[0].advice = {}; cur.blocks[0].wide = {on:false, memo:""}; cur.blocks[0].fusen = [3]`);
 });
-run("手触りは行の付箋にも付けられる", () => {
+await run("手触りは行の付箋にも付けられる", () => {
   ev(`cur.blocks[0].ftags = {3: ["重い", "視点が動く"]}; cur.blocks[0].fmemo = {}`);
   truthy(ev("talkText()").indexOf("手触り：重い、視点が動く") >= 0, "行の手触りが渡らない");
   const rows = ev("noteRows()");
   truthy(rows.some(r => r.type === "fusen" && r.m === "重い、視点が動く"), "控えに手触りが載らない");
   truthy(ev("noteTextBody()").indexOf(" 手触り：") >= 0, "控えのテキストに手触りがない");
 });
-run("続きの範囲では、手触りを一度だけ聞く", () => {
+await run("続きの範囲では、手触りを一度だけ聞く", () => {
   ev(`cur.blocks[0].fusen = [0, 1]; cur.blocks[0].ftags = {1: ["重い"]}; cur.blocks[0].fmemo = {}`);
   const t = ev("talkText()");
   eq(t.split("手触り：").length - 1, 1, "範囲の中で手触りが繰り返されている");
   truthy(t.indexOf("手触り：重い") >= 0, "範囲のどこに書いても拾えるべき");
   ev(`cur.blocks[0].fusen = [3]; cur.blocks[0].ftags = {}; cur.blocks[0].fmemo = {}`);
 });
-run("札とひとことは別々に持つ", () => {
+await run("札とひとことは別々に持つ", () => {
   ev(`cur.blocks[0].ftags = {3: ["重い", "視点が動く"]}; cur.blocks[0].fmemo = {3: "台詞のあと、間が足りない"}`);
   const m = ev(`memoOf(cur.blocks[0], 3)`);
   eq(m.tags.join("／"), "重い／視点が動く", "札が取り出せない");
   eq(m.free, "台詞のあと、間が足りない", "ひとことの読点が失われている");
   eq(ev(`memoText(memoOf(cur.blocks[0], 3))`), "重い、視点が動く、台詞のあと、間が足りない");
 });
-run("ひとことに読点を打っても札と混ざらない", () => {
+await run("ひとことに読点を打っても札と混ざらない", () => {
   ev(`cur.blocks[0].ftags = {}; cur.blocks[0].fmemo = {3: "重い、と思ったが違う"}`);
   const m = ev(`memoOf(cur.blocks[0], 3)`);
   eq(m.tags.length, 0, "ひとことの中の語を札と取り違えている");
   eq(m.free, "重い、と思ったが違う", "ひとことが削られている");
 });
-run("古い持ちかたからは、札とひとことに分けて引き継ぐ", () => {
+await run("古い持ちかたからは、札とひとことに分けて引き継ぐ", () => {
   ev(`__old = {v:2, blocks:[{t:"あ。", done:false, note:"", marks:[], fusen:[3], edits:{}, advice:{},
        fmemo:{3:"重い、なんだか遠い"}, wide:{on:true, memo:"なんとなく変"}}], pass:1, kind:"typo", log:[], history:[]}`);
   ev(`migrate(__old)`);
@@ -302,7 +302,7 @@ run("古い持ちかたからは、札とひとことに分けて引き継ぐ", 
   eq(ev(`__old.blocks[0].wide.tags.join("／")`), "なんとなく変", "まるごとの札が引き継がれない");
   eq(ev(`__old.blocks[0].wide.memo`), "", "まるごとのひとことが残ってしまう");
 });
-run("返事を貼ると番号どおりに案が付く", () => {
+await run("返事を貼ると番号どおりに案が付く", () => {
   ev(`cur.blocks[0].ftags = {}; cur.blocks[0].fmemo = {}`);
   const 返事 = [
     "承知しました。三件みていきます。",
@@ -323,22 +323,22 @@ run("返事を貼ると番号どおりに案が付く", () => {
   eq(cands.length, 2, "押せる候補の数");
   eq(cands[0], "　彼は何も言わなかった。", "行頭の字下げが落ちている");
 });
-run("番号が見つからない返事は取り込まない", () => {
+await run("番号が見つからない返事は取り込まない", () => {
   eq(ev(`importAdvice("ここはこう直すとよいと思います。").n`), 0, "何でも取り込んでしまう");
 });
 const 短い返事 = 印 => 印 + "\n案：　彼は黙っていた。";
-run("全角の［Ｆ１］でも読める", () => {
+await run("全角の［Ｆ１］でも読める", () => {
   ev(`cur.blocks[0].advice = {}`);
   eq(ev(`importAdvice(${JSON.stringify(短い返事("［Ｆ１］"))}).n`), 1, "全角が読めない");
 });
-run("付箋を増やしても、書き出した時の番号のまま配られる", () => {
+await run("付箋を増やしても、書き出した時の番号のまま配られる", () => {
   ev(`cur.blocks[0].advice = {}; cur.blocks[0].fusen = [0, 3]`);   /* 書き出しのあとに一つ増やした */
   const r = ev(`importAdvice(${JSON.stringify(短い返事("[F1]"))})`);
   eq(r.n, 1, "取り込めた件数");
   truthy(ev("cur.blocks[0].advice[3]") !== undefined, "書き出した時の1番（4行目）に付くべき");
   truthy(ev("cur.blocks[0].advice[0]") === undefined, "あとから増えた付箋に付いてしまった");
 });
-run("控えと書き出しに案が載る", () => {
+await run("控えと書き出しに案が載る", () => {
   const rows = ev("noteRows()");
   const f = rows.filter(r => r.type === "fusen");
   truthy(f.length >= 1, "付箋の行がない");
@@ -349,15 +349,15 @@ ev(`cur = null; curId = null`);
 
 console.log("\n差分回収と、自分の直しから作る鉛筆");
 const 型 = (a, b) => ev(`diffMoves(${JSON.stringify(a)}, ${JSON.stringify(b)})`).map(m => m.k + (m.a ? "「" + m.a + "」" : "") + (m.b ? "→「" + m.b + "」" : "")).join(" ");
-run("削った語を切り出す", () => eq(型("　彼は静かに窓を閉めた。", "　窓を閉めた。"), "del「彼は静かに」"));
-run("言い換えと語尾の直しを分ける", () => eq(型("　その事について、彼は何も言わなかったのだった。", "　そのことについて、彼は何も言わなかった。"), "sub「事」→「こと」 tail「のだった」"));
-run("語尾の直しは、語尾の形のまま切り出す", () => eq(型("　もう戻れないと思った。", "　もう戻れないと思う。"), "tail「った」→「う」"));
-run("読点の増減は本人の領分として分ける", () => eq(型("　手紙の端を、指でなぞった。", "　手紙の端を指でなぞった。"), "punct「、」"));
-run("長い書き直しは規則にしない", () => {
+await run("削った語を切り出す", () => eq(型("　彼は静かに窓を閉めた。", "　窓を閉めた。"), "del「彼は静かに」"));
+await run("言い換えと語尾の直しを分ける", () => eq(型("　その事について、彼は何も言わなかったのだった。", "　そのことについて、彼は何も言わなかった。"), "sub「事」→「こと」 tail「のだった」"));
+await run("語尾の直しは、語尾の形のまま切り出す", () => eq(型("　もう戻れないと思った。", "　もう戻れないと思う。"), "tail「った」→「う」"));
+await run("読点の増減は本人の領分として分ける", () => eq(型("　手紙の端を、指でなぞった。", "　手紙の端を指でなぞった。"), "punct「、」"));
+await run("長い書き直しは規則にしない", () => {
   const m = ev(`diffMoves("　光が差し、鳥が鳴き、朝が来て、風が吹いて、それから彼は立ち上がった。", "　彼は立ち上がった。")`);
   truthy(m.some(x => x.k === "rewrite"), "十二字を超える直しが規則候補に混じる: " + JSON.stringify(m));
 });
-run("同じ直しを二回すると規則候補になり、一回なら参考に落ちる", () => {
+await run("同じ直しを二回すると規則候補になり、一回なら参考に落ちる", () => {
   ev(`__h = {v:2, id:"h", title:"t", blocks: cutBlocks("　あ。", 2200), pass:1, kind:"typo", history:[], log:[
     {p:1,k:"typo",b:0,i:0,o:"　彼は静かに窓を閉めた。", n:"　窓を閉めた。", at:1},
     {p:1,k:"typo",b:0,i:1,o:"　彼は静かに扉を押した。", n:"　扉を押した。", at:2},
@@ -370,7 +370,7 @@ run("同じ直しを二回すると規則候補になり、一回なら参考に
   eq(cand[0].k, "彼は静かに"); eq(cand[0].n, 2);
   truthy(ev("harvestText()").indexOf("削った　彼は静かに　2回") >= 0, "回収の書き出しに載らない");
 });
-run("規則候補から鉛筆ができて、残っている行に引かれる", () => {
+await run("規則候補から鉛筆ができて、残っている行に引かれる", () => {
   ev("buildMine()");
   eq(ev("mineCache.length"), 1, "鉛筆の本数");
   ev(`__b = {t:"　彼は静かに息を吐いた。\\n　風が吹いた。", done:false, note:"", marks:[], fusen:[], edits:{}, advice:{}, fmemo:{}, ftags:{}, wide:{on:false,memo:"",tags:[]}}`);
@@ -379,7 +379,7 @@ run("規則候補から鉛筆ができて、残っている行に引かれる", 
   truthy(!r[2], "形のない行にまで引いている");
   truthy(r[0][0].msg.indexOf("よく削る") >= 0, "言葉が違う: " + r[0][0].msg);
 });
-run("語尾の鉛筆は、語尾にだけ引く", () => {
+await run("語尾の鉛筆は、語尾にだけ引く", () => {
   ev(`cur.log = [
     {p:1,k:"typo",b:0,i:0,o:"　鳥が鳴いた。", n:"　鳥が鳴く。", at:1},
     {p:1,k:"typo",b:0,i:1,o:"　靴を履いた。", n:"　靴を履く。", at:2}
@@ -391,7 +391,7 @@ run("語尾の鉛筆は、語尾にだけ引く", () => {
   truthy(r[0] && r[0].some(x => x.id.indexOf("mine:") === 0), "語尾に引かれない");
   truthy(!(r[2] && r[2].some(x => x.id.indexOf("mine:") === 0)), "文頭の「いた」にまで引いている");
 });
-run("語尾を丸ごと削ったときも、鍵と鉛筆が壊れない", () => {
+await run("語尾を丸ごと削ったときも、鍵と鉛筆が壊れない", () => {
   ev(`cur.log = [
     {p:1,k:"typo",b:0,i:0,o:"　廊下は暗かったのだった。", n:"　廊下は暗かった。", at:1},
     {p:1,k:"typo",b:0,i:1,o:"　何も言わなかったのだった。", n:"　何も言わなかった。", at:2}
@@ -402,7 +402,7 @@ run("語尾を丸ごと削ったときも、鍵と鉛筆が壊れない", () => 
   truthy(ev("mineCache[0].name").indexOf("語尾をよく削る「のだった」") === 0, "言葉が違う: " + ev("mineCache[0].name"));
   truthy(ev("harvestText()").indexOf("undefined") < 0, "書き出しに undefined が混じる");
 });
-run("設定で止められる", () => {
+await run("設定で止められる", () => {
   ev("conf.mine = false; buildMine()");
   eq(ev("mineCache.length"), 0);
   ev("conf.mine = true; buildMine(); cur = null; curId = null");
@@ -410,20 +410,20 @@ run("設定で止められる", () => {
 
 console.log("\n過去の直しの持ち越し");
 const 対 = (a, b) => ev(`alignPairs(sentencesOf(${JSON.stringify(a)}), sentencesOf(${JSON.stringify(b)}))`);
-run("二つの版を文で突き合わせて、変わった文の対だけを取り出す", () => {
+await run("二つの版を文で突き合わせて、変わった文の対だけを取り出す", () => {
   const pairs = 対("　彼は静かに窓を閉めた。\n　雨はまだ降っていた。\n「行くのか」\n　その事について、彼は何も言わなかったのだった。\n　塔は町の外れに立っていた。",
                   "　窓を閉めた。\n　雨はまだ降っていた。\n「行くのか」\n　そのことについて、彼は何も言わなかった。\n　塔は町の外れに立っていた。");
   eq(pairs.length, 2, "変わった文の数: " + JSON.stringify(pairs));
   eq(pairs[0].o, "彼は静かに窓を閉めた。"); eq(pairs[0].n, "窓を閉めた。");
   eq(pairs[1].o, "その事について、彼は何も言わなかったのだった。");
 });
-run("文が増えたり消えたりしても組み違えない", () => {
+await run("文が増えたり消えたりしても組み違えない", () => {
   const pairs = 対("一つ目。\n二つ目。\n三つ目。\n四つ目。", "一つ目。\n三つ目。\n四つ目に足した。\n五つ目。");
   truthy(pairs.some(x => x.o === "二つ目。" && x.n === ""), "消えた文を拾えない: " + JSON.stringify(pairs));
   truthy(pairs.some(x => x.o === "四つ目。" && x.n === "四つ目に足した。"), "似た文を組めない: " + JSON.stringify(pairs));
   truthy(pairs.some(x => x.o === "" && x.n === "五つ目。"), "増えた文を拾えない");
 });
-run("持ち越した直しから、新しい原稿に先回りの鉛筆が引かれる", () => {
+await run("持ち越した直しから、新しい原稿に先回りの鉛筆が引かれる", () => {
   ev("memory = []; cur = null; curId = null");
   const n = ev(`importPairs(${JSON.stringify("　彼は静かに窓を閉めた。\n　彼は静かに扉を押した。")}, ${JSON.stringify("　窓を閉めた。\n　扉を押した。")}, "旧作")`);
   eq(n, 2, "持ち越した数");
@@ -433,7 +433,7 @@ run("持ち越した直しから、新しい原稿に先回りの鉛筆が引か
   truthy(r[0] && r[0].some(x => x.id.indexOf("mine:") === 0), "新しい原稿の一行目に引かれない: " + JSON.stringify(r));
   truthy(!r[1], "形のない行にまで引いている");
 });
-run("同じ作品を入れ直すと置き換わり、外すと消える", () => {
+await run("同じ作品を入れ直すと置き換わり、外すと消える", () => {
   ev(`importPairs(${JSON.stringify("あ。\nい。")}, ${JSON.stringify("あ。\nう。")}, "旧作")`);
   eq(ev("memory.length"), 1, "入れ直しで二重になっている");
   ev(`memory = memory.filter(x => x.w !== "旧作"); buildMine()`);
@@ -442,7 +442,7 @@ run("同じ作品を入れ直すと置き換わり、外すと消える", () => 
 });
 
 console.log("\n差分メモの読み込み");
-run("矢印・削除・回数を読む", () => {
+await run("矢印・削除・回数を読む", () => {
   const r = ev(`parseMemo(${JSON.stringify("- 静かに を削除　×4\n・事 → こと　3件\n「のだった」→「だった」\nまるで夢のように（削除）\n彼女の目 -> 目（2）")})`);
   eq(r.pairs.length, 5, "読めた行の数: " + JSON.stringify(r));
   eq(r.pairs[0].o, "静かに"); eq(r.pairs[0].n, ""); eq(r.pairs[0].c, 4, "×4 を回数として読めない");
@@ -451,11 +451,11 @@ run("矢印・削除・回数を読む", () => {
   eq(r.pairs[3].n, "", "（削除）を削除として読めない");
   eq(r.pairs[4].c, 2, "（2）を回数として読めない");
 });
-run("読めない行は飛ばして、飛ばしたことを伝える", () => {
+await run("読めない行は飛ばして、飛ばしたことを伝える", () => {
   const r = ev(`parseMemo(${JSON.stringify("# 見出し\nただの説明文\n事 → こと")})`);
   eq(r.pairs.length, 1); eq(r.skipped.length, 1, "説明文を飛ばしたことが分からない");
 });
-run("メモの対は突き合わせずに、書いてあるとおりに数える", () => {
+await run("メモの対は突き合わせずに、書いてあるとおりに数える", () => {
   ev("memory = []; cur = null; curId = null");
   ev(`importMemo(${JSON.stringify("静かに を削除　×3\nのだった → だった　×2\n事 → こと")}, "旧作の控え")`);
   const cand = ev("harvestRows(harvest(memory), 2)");
@@ -464,7 +464,7 @@ run("メモの対は突き合わせずに、書いてあるとおりに数える
   truthy(keys.indexOf("のだった → だった:2") >= 0, "言い換えが「の」に縮んでいる（突き合わせてしまっている）: " + keys);
   truthy(keys.indexOf("事 → こと") < 0, "一回きりが規則候補に混じる");
 });
-run("メモから先回りの鉛筆ができる", () => {
+await run("メモから先回りの鉛筆ができる", () => {
   ev(`__m = {v:2, id:"m", title:"新作", blocks: cutBlocks("　彼は静かに息を吐いた。それが答えなのだった。", 2200), pass:1, kind:"typo", log:[], history:[]}; migrate(__m); cur = __m; curId = "m"; index = []; buildMine()`);
   eq(ev("mineCache.length"), 2, "鉛筆の本数");
   const r = ev("readBlock(cur.blocks[0], null)");
@@ -474,7 +474,7 @@ run("メモから先回りの鉛筆ができる", () => {
 });
 
 console.log("\nあらかじめ直す／執筆に持っていく");
-run("規則候補に出自（どの作品で何回）が付く", () => {
+await run("規則候補に出自（どの作品で何回）が付く", () => {
   ev("memory = []; cur = null; curId = null");
   ev(`importMemo(${JSON.stringify("静かに を削除　×2")}, "旧作A")`);
   ev(`__c = {v:2, id:"c", title:"新作", blocks: cutBlocks("　彼は静かに息を吐いた。彼は静かに扉を押した。それから歩き出した。", 2200), pass:1, kind:"typo", history:[],
@@ -483,22 +483,22 @@ run("規則候補に出自（どの作品で何回）が付く", () => {
   eq(cand.length, 1); eq(cand[0].n, 3, "この作品1＋旧作A2");
   eq(cand[0].src["旧作A"], 2); eq(cand[0].src["新作"], 1, "出自が作品ごとに分かれない: " + JSON.stringify(cand[0].src));
 });
-run("「当てる」は該当する行だけを数え、語尾と一字は当てない", () => {
+await run("「当てる」は該当する行だけを数え、語尾と一字は当てない", () => {
   const r = ev("ruleHits(harvestRows(harvest(allEdits()), 2)[0])");
   eq(r.hits.length, 2, "静かに を含む行の数");
   eq(ev(`ruleHits({c:"tail", k:"いた → く", n:2})`), null, "語尾を当てようとしている");
   eq(ev(`ruleHits({c:"del", k:"事", n:5})`), null, "一字を当てようとしている");
 });
-run("当てると行が直り、控えに残り、癖としては数えない", () => {
-  ev("confirm = () => true");
-  eq(ev("applyRule(harvestRows(harvest(allEdits()), 2)[0])"), 2, "当てた行の数");
+await await run("当てると行が直り、控えに残り、癖としては数えない", async () => {
+  ev("ask = async () => true");            /* 小窓は「はい」と答えたことにする */
+  eq(await ev("applyRule(harvestRows(harvest(allEdits()), 2)[0])"), 2, "当てた行の数");
   eq(ev("workText(cur)"), "　彼は息を吐いた。彼は扉を押した。それから歩き出した。");
   eq(ev("Object.keys(cur.blocks[0].edits).length"), 2, "直しとして残っていない");
   truthy(ev("cur.log.filter(l => l.auto).length === 2"), "機械が当てた印がない");
   eq(ev("harvestRows(harvest(allEdits()), 2)[0].n"), 3, "当てた分まで癖として数えている");
   eq(ev("ruleHits(harvestRows(harvest(allEdits()), 2)[0]).hits.length"), 0, "当てたあとも本文に残っている");
 });
-run("執筆に持っていく一枚に、出自と避けることが並ぶ", () => {
+await run("執筆に持っていく一枚に、出自と避けることが並ぶ", () => {
   const t = ev("carryText()");
   truthy(t.indexOf("執筆時に避けること") >= 0, "見出しがない");
   truthy(t.indexOf("出自：朱入れ") >= 0 && t.indexOf("旧作A") >= 0, "出自がない: " + t);
@@ -508,19 +508,19 @@ run("執筆に持っていく一枚に、出自と避けることが並ぶ", () 
 
 console.log("\n種類でみた傾向");
 const 種 = (k, a, b) => ev(`moveKind({k:${JSON.stringify(k)}, a:${JSON.stringify(a)}, b:${JSON.stringify(b||"")}})`);
-run("削った語を種類に分ける", () => {
+await run("削った語を種類に分ける", () => {
   eq(種("del", "静かに"), "adv"); eq(種("del", "そっと"), "adv"); eq(種("del", "小さく"), "adv"); eq(種("del", "穏やかに"), "adv");
   eq(種("del", "彼は"), "subj"); eq(種("del", "彼女の"), "subj");
   eq(種("del", "そして"), "conj"); eq(種("del", "まるで夢のように"), "simile"); eq(種("del", "と思った"), "mind");
   eq(種("del", "のだった"), "tailform"); eq(種("del", "が"), "particle"); eq(種("del", "手紙の端を"), "phrase");
   eq(種("del", "窓に"), "phrase", "名詞＋に を副詞と取り違える");
 });
-run("言い換えと語尾を種類に分ける", () => {
+await run("言い換えと語尾を種類に分ける", () => {
   eq(種("sub", "事", "こと"), "open"); eq(種("sub", "もの", "物"), "close"); eq(種("sub", "煙って", "煙り"), "swap");
   eq(種("tail", "のだった", ""), "tailform"); eq(種("tail", "った", "う"), "tail");
   eq(種("punct", "、", ""), "punctdel"); eq(種("punct", "", "、"), "punctadd");
 });
-run("ばらばらの直しでも、種類で束ねると傾向になる", () => {
+await run("ばらばらの直しでも、種類で束ねると傾向になる", () => {
   ev("memory = []; cur = null; curId = null");
   ev(`importMemo(${JSON.stringify("静かに を削除\nそっと を削除\n小さく を削除\n彼は を削除")}, "旧作B")`);
   const h = ev("harvest(allEdits())");
@@ -529,7 +529,7 @@ run("ばらばらの直しでも、種類で束ねると傾向になる", () => 
   eq(tr[0].id, "adv"); eq(tr[0].n, 3, "副詞を削る 3回");
   eq(tr[0].ex.map(e => e.k).sort().join("／"), ["静かに","そっと","小さく"].sort().join("／"), "例が三つそろわない");
 });
-run("傾向が三回以上なら、一回きりの語にも鉛筆が引かれる", () => {
+await run("傾向が三回以上なら、一回きりの語にも鉛筆が引かれる", () => {
   ev(`__t2 = {v:2, id:"t2", title:"新作", blocks: cutBlocks("　彼はそっと扉を押した。彼は何も言わなかった。", 2200), pass:1, kind:"typo", log:[], history:[]}; migrate(__t2); cur = __t2; curId = "t2"; index = []; buildMine()`);
   const names = ev("mineCache.map(x => x.name)");
   truthy(names.some(x => x.indexOf("副詞を削る傾向「そっと」") === 0), "傾向の鉛筆がない: " + JSON.stringify(names));
@@ -538,7 +538,7 @@ run("傾向が三回以上なら、一回きりの語にも鉛筆が引かれる
   truthy(r[0] && r[0].some(x => x.msg.indexOf("副詞を削る傾向「そっと」") === 0), "本文に引かれない: " + JSON.stringify(r));
   truthy(!r[1], "関係ない行に引いている");
 });
-run("執筆に持っていく一枚と回収の書き出しに、傾向が載る", () => {
+await run("執筆に持っていく一枚と回収の書き出しに、傾向が載る", () => {
   const c = ev("carryText()");
   truthy(c.indexOf("傾向（三回以上）") >= 0 && /副詞を削る　3回（[^）]*静かに[^）]*）/.test(c) && /そっと/.test(c) && /小さく/.test(c), "傾向が載らない: " + c);
   truthy(ev("harvestText()").indexOf("【種類でみた傾向】") >= 0, "回収に傾向がない");
@@ -550,22 +550,22 @@ const 日 = n => { const d = new Date(); d.setDate(d.getDate() - n);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
 const 先 = n => 日(-n);
 
-run("読みはじめた日から数えるので、初日でも当てにできる", () => {
+await run("読みはじめた日から数えるので、初日でも当てにできる", () => {
   ev(`daily = ${JSON.stringify({ [日(0)]: 2 })}`);
   eq(ev("pace()"), 2, "きょう2区切りなら一日2");
   ev(`daily = ${JSON.stringify({ [日(0)]: 4, [日(1)]: 4, [日(2)]: 4 })}`);
   eq(ev("pace()"), 4, "三日で12区切りなら一日4");
 });
-run("間をあけた日も数に入る", () => {
+await run("間をあけた日も数に入る", () => {
   ev(`daily = ${JSON.stringify({ [日(6)]: 10 })}`);
   const p = ev("pace()");
   truthy(p > 1.3 && p < 1.6, "七日で10区切りなら一日1.4前後。得た値 " + p);
 });
-run("実績がなければ日付を当てずっぽうで出さない", () => {
+await run("実績がなければ日付を当てずっぽうで出さない", () => {
   ev("daily = {}");
   eq(ev("eta(17)"), null, "何もしていないのに見通しを出している");
 });
-run("締め切りまでの日数と、一日に要る区切り数", () => {
+await run("締め切りまでの日数と、一日に要る区切り数", () => {
   ev(`daily = {}`);
   eq(ev(`daysTo(${JSON.stringify(先(5))})`), 5, "五日後を五日と数えない");
   eq(ev(`daysTo(${JSON.stringify(日(2))})`), -2, "過ぎた日を負で数えない");
@@ -575,17 +575,17 @@ run("締め切りまでの日数と、一日に要る区切り数", () => {
   eq(i.days, 4);
   eq(i.need, 3, "12区切りを4日で割ると一日3");
 });
-run("締め切り当日と、過ぎたあと", () => {
+await run("締め切り当日と、過ぎたあと", () => {
   const 当日 = ev(`dueInfo(${JSON.stringify({ due: 日(0), blocks: [{ done: false }, { done: false }, { done: true }] })})`);
   eq(当日.days, 0); eq(当日.need, 2, "当日は残り全部が今日の分");
   const 超過 = ev(`dueInfo(${JSON.stringify({ due: 日(3), blocks: [{ done: false }, { done: false }] })})`);
   eq(超過.days, -3); eq(超過.need, 2, "過ぎていても残り全部");
 });
-run("読み終えた原稿と校了した原稿は、締め切りを急かさない", () => {
+await run("読み終えた原稿と校了した原稿は、締め切りを急かさない", () => {
   eq(ev(`dueInfo(${JSON.stringify({ due: 先(3), blocks: [{ done: true }] })}).done`), true, "読み終えていると分からない");
   eq(ev(`dueInfo(${JSON.stringify({ due: 先(3), closed: true, blocks: [{ done: false }] })})`), null, "校了後も急かしている");
 });
-run("きょうの分は、締め切りのある原稿から逆算される", () => {
+await run("きょうの分は、締め切りのある原稿から逆算される", () => {
   ev(`conf.quota = 3; index = [{id:"a", title:"x", done:0, total:20, due:${JSON.stringify(先(4))}}]`);
   eq(ev("todayNeed()"), 5, "20区切りを4日で割ると一日5");
   ev(`index = [{id:"a", title:"x", done:0, total:20, due:null}]`);
@@ -594,7 +594,7 @@ run("きょうの分は、締め切りのある原稿から逆算される", () 
 });
 
 console.log("\nWordの読み書き");
-run("書き出したdocxを自分で読み戻せる", () => {
+await run("書き出したdocxを自分で読み戻せる", () => {
   const bytes = ev(`buildDocx([para([{t:"人形の部屋",b:true,sz:30}],true), para([{t:"　雨が降っていた。"}]), para([{t:"直す前",st:true,color:"808080"}])])`);
   const buf = Buffer.from(bytes);
   fs.writeFileSync(path.join(process.cwd(), "tools/tmp-out.docx"), buf);
@@ -604,7 +604,7 @@ run("書き出したdocxを自分で読み戻せる", () => {
   return xml.then ? xml : null;
 });
 const xml = await ev("readDocx(__ab)");
-run("読み戻した本文が合っている", () => {
+await run("読み戻した本文が合っている", () => {
   const text = ev(`xmlToText(${JSON.stringify(xml)})`);
   eq(text, "人形の部屋\n　雨が降っていた。\n直す前");
 });

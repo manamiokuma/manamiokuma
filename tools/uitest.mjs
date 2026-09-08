@@ -27,6 +27,7 @@ const 本文 = `　第一章　雨の匂い
 const step = async (name, fn) => { try { await fn(); console.log("  ✓ " + name); } catch (e) { console.log("  ✗ " + name + " — " + e.message); process.exitCode = 1; } };
 const vis = async id => await p.locator("#v-" + id).isVisible();
 const must = (c, m) => { if (!c) throw new Error(m); };
+const 小窓ではい = async () => { await p.locator("#ask-ok").waitFor({ state: "visible", timeout: 3000 }); await p.click("#ask-ok"); };
 
 console.log("\n通しで動かす");
 await step("一覧が出る", async () => must(await vis("home"), "一覧が見えない"));
@@ -281,8 +282,8 @@ await step("見通しの日付が出る", async () => {
   must(e.includes("読み終わります") || e.includes("見当"), "見通しが出ない: " + e);
 });
 await step("校了の印を押せる", async () => {
-  p.once("dialog", d => d.accept());
   await p.click("#btn-close");
+  await 小窓ではい();                          /* まだ残っている区切りがある、それでも校了にするか */
   await p.waitForTimeout(300);
   must(await p.locator(".seal").count() === 1, "朱印が出ない");
   must((await p.textContent("#w-seal")).includes("校了"), "校了と出ない");
@@ -291,8 +292,8 @@ await step("校了の印を押せる", async () => {
   must((await p.textContent("#worklist")).includes("校了"), "一覧に校了が出ない");
   must(await p.locator("#btn-resume").count() === 0, "校了した原稿につづきが出ている");
   await p.locator(".work").first().click();
-  p.once("dialog", d => d.accept());
   await p.click("#btn-close");
+  await 小窓ではい();
   must(await p.locator(".seal").count() === 0, "校了を取り消せない");
 });
 await step("締め切りを決めるとノルマが変わる", async () => {
@@ -597,10 +598,11 @@ await step("読み込み直しても残っている", async () => {
 });
 await step("区切りを割り直しても直しは残る", async () => {
   await p.click("#r-back");
-  let asked = 0;
-  const onDialog = d => d.accept(asked++ === 0 ? "900" : "");
-  p.on("dialog", onDialog);
   await p.click("#btn-resize");
+  await p.locator("#ask-in").waitFor({ state: "visible", timeout: 3000 });
+  await p.fill("#ask-in", "900");
+  await p.click("#ask-ok");                    /* 字数 */
+  await 小窓ではい();                          /* 消えるものの確認 */
   await p.waitForTimeout(300);
   await p.click("#btn-out");
   const dl = p.waitForEvent("download");
@@ -609,7 +611,6 @@ await step("区切りを割り直しても直しは残る", async () => {
   const st = await d.createReadStream();
   let body = ""; for await (const c of st) body += c;
   must(body.includes("雨が降りつづいていた"), "割り直しで直しが消えた");
-  p.off("dialog", onDialog);
 });
 await step("過去の直しを持ち越すと、いまの原稿に先回りの鉛筆が引かれる", async () => {
   await p.click("#o-back");                     /* 直前の段は書き出す画面で終わる */
@@ -669,8 +670,8 @@ await step("規則候補を本文にまとめて当てられる", async () => {
   const btn = p.locator('tr', { hasText: "白く" }).locator('button[data-apply]').first();
   must(await btn.count() === 1, "「白く」の行に当てるボタンがない");
   must((await btn.textContent()).includes("当てる"), "文言が違う: " + (await btn.textContent()));
-  p.once("dialog", d => d.accept());
   await btn.click();
+  await 小窓ではい();
   await p.waitForTimeout(300);
   must((await p.textContent("#rp-body")).includes("本文になし"), "当てたあとも本文に残っている");
   await p.click("#rp-back");
