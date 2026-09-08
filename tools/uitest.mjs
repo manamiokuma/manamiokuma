@@ -52,6 +52,16 @@ await step("読む画面に入る", async () => {
   must(await vis("read"), "読む画面に来ない");
   must((await p.locator(".ln").count()) > 3, "行が並んでいない");
 });
+await step("機械の下読みは既定で止まっている", async () => {
+  must(await p.locator(".lnhold.pen").count() === 0, "既定で鉛筆が出ている");
+  must(!(await p.locator("#r-nextpen").isVisible()), "鉛筆へのボタンが出ている");
+  await p.click("#r-back");
+  await p.click("#btn-conf2");
+  must(!(await p.locator("#c-pen").evaluate(el => el.className.includes("on"))), "設定でも点いている");
+  await p.click("#c-pen");                       /* ここから先の点検は点けた状態で */
+  await p.click("#c-back");
+  await p.click("#btn-go");
+});
 await step("鉛筆が引かれている", async () => {
   const n = await p.locator(".lnhold.pen").count();
   must(n > 0, "鉛筆が一つも出ていない");

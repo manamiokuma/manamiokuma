@@ -97,6 +97,12 @@ run("直しても他の行の番号がずれない", () => {
 });
 
 console.log("\n下読み（鉛筆）");
+run("機械の下読みは、既定では止まっている", () => {
+  eq(ev("conf.pen"), false, "既定で点いている");
+  ev(`__b0 = {t: "　そうか…と彼は言った。", marks: [], edits: {}, note: "", done: false}`);
+  eq(Object.keys(ev("readBlock(__b0, null)")).length, 0, "止まっているのに鉛筆が出た");
+  ev("conf.pen = true");     /* ここから先の点検は点けた状態で */
+});
 const 引く = (text, rule) => {
   ev(`__b = {t: ${JSON.stringify(text)}, marks: [], edits: {}, note: "", done: false}`);
   const res = ev("readBlock(__b, null)");

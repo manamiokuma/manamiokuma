@@ -414,7 +414,8 @@
     <p class="cat-h">自分の直しから作る鉛筆</p>
     <button class="sw" id="c-mine"><i></i><div><b>同じ直しを二回したら、次から先回りする</b><span>行を直した記録から「よく削る語」「よく言い換える語」を拾い、その形が残っている行に鉛筆を引きます。通しの種類にかかわらず出ます</span></div></button>
     <p class="cat-h">下読み</p>
-    <p class="lead">機械が先に読んで、あやしい行に<u>鉛筆</u>を引きます。朱は人が入れるもの、鉛筆は機械が引くもの。うるさい項目は消してください。消しても本文は変わりません。</p>
+    <button class="sw" id="c-pen"><i></i><div><b>機械の下読みを使う</b><span>三点リーダの数、括弧の対応、表記のゆれといった字面の規則で鉛筆を引きます。ふだんは止めてあります。見たい項目がある日だけ点けてください</span></div></button>
+    <p class="lead" id="c-penlead" style="margin-top:12px">機械が先に読んで、あやしい行に<u>鉛筆</u>を引きます。朱は人が入れるもの、鉛筆は機械が引くもの。うるさい項目は消してください。消しても本文は変わりません。</p>
     <div id="c-list"></div>
     <div class="foot"><button id="c-all">ぜんぶ点ける</button><button id="c-none">ぜんぶ消す</button></div>
   </section>
@@ -661,7 +662,7 @@ const CATNAME={hyoki:"誤字と表記",buntai:"文体とリズム",seigou:"つ�
 /* 一区切りぶんの下読み。{k:[{id,msg}]} を返す */
 function readBlock(b, cats){
   const ls=lines(b.t), res={};
-  const use=r=>conf.rules[r.id]!==false && (!cats||!cats.length||cats.indexOf(r.cat)>=0);
+  const use=r=>conf.pen===true && conf.rules[r.id]!==false && (!cats||!cats.length||cats.indexOf(r.cat)>=0);
   const on=RULES.filter(r=>!r.para&&use(r)).concat(mineCache), onP=RULES.filter(r=>r.para&&use(r));
   if(!on.length&&!onP.length) return res;
   const add=(k,id,msg)=>{ (res[k]=res[k]||[]).push({id:id,msg:msg}); };
@@ -889,7 +890,7 @@ function renderWork(){
   const chars=rest.reduce((a,b)=>a+b.t.length,0);
   $("w-rest").innerHTML= cur.closed? "校了しました" : (rest.length? '残り <b>'+rest.length+'</b> 区切り' : "この通しは読み終わりました");
   const pen=penTotal();
-  $("w-sub").textContent= (rest.length&&!cur.closed? "およそ"+mins(chars)+"　" : "")+"全"+cur.blocks.length+"区切り・"+workText(cur).length.toLocaleString()+"字"+(pen?"　鉛筆"+pen+"行":"　鉛筆なし");
+  $("w-sub").textContent= (rest.length&&!cur.closed? "およそ"+mins(chars)+"　" : "")+"全"+cur.blocks.length+"区切り・"+workText(cur).length.toLocaleString()+"字"+(pen?"　鉛筆"+pen+"行":"");
   $("w-sheet").className="sheet";
   $("w-sheet").innerHTML=cur.blocks.map((b,i)=>{
     const p=penCount(penCache[i]||{});
@@ -1147,11 +1148,12 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("veil").classLi
 /* ============================================================
    起動
    ============================================================ */
-function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, cpm:200, wordWhen:"leave", quota:3, last:null}; }
+function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, pen:false, mine:true, cpm:200, wordWhen:"leave", quota:3, last:null}; }
 (function boot(){
   conf=jget(K_CONF)||defaultConf();
   conf.rules=conf.rules||{}; RULES.forEach(x=>{ if(conf.rules[x.id]===undefined) conf.rules[x.id]=true; });
   if(!conf.wordWhen) conf.wordWhen = (conf.autoWord===false? "manual" : "leave");   /* 旧い設定からの移行 */
+  if(conf.pen===undefined) conf.pen=false;   /* 下読みは既定で止める。誤字と表記の衛生は、この道具の仕事ではなかった */
   delete conf.autoWord;
   if(!conf.quota) conf.quota=3;
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
@@ -1785,8 +1787,8 @@ function renderReport(){
   all.forEach(m=>{ for(const k in m) m[k].forEach(x=>{ tally[x.id]=(tally[x.id]||0)+1; total++; }); });
   const byPass={};
   cur.log.forEach(l=>{ byPass[l.p]=byPass[l.p]||{n:0,kind:l.k}; byPass[l.p].n++; });
-  $("rp-lead").textContent="上は、あなたが実際に直したことの傾向。下は、機械が拾える指摘の残り。";
-  const cats=["hyoki","buntai","seigou"];
+  $("rp-lead").textContent= conf.pen===true? "上は、あなたが実際に直したことの傾向。下は、機械が拾える指摘の残り。" : "あなたが実際に直したことの傾向です。";
+  const cats=conf.pen===true? ["hyoki","buntai","seigou"] : [];
   let html="";
   const h=harvest(), cand=harvestRows(h,2), once=harvestRows(h,1).filter(x=>x.n<2);
   html+='<p class="cat-h">直しの傾向　'+h.n.fix+'行</p>';
@@ -1813,6 +1815,7 @@ function renderReport(){
     });
     html+='</tbody></table>';
   });
+  if(conf.pen!==true) html+='<p class="lead" style="font-size:12px">機械の下読みは止めてあります（設定で点けると、字面の規則の残りがここに出ます）。</p>';
   html+='<p class="cat-h">いま残っているもの</p><table class="tally"><tbody>'+
     '<tr><td>付箋（どう直すか決まっていないところ）</td><td class="n">'+itemTotal()+'</td></tr>'+
     '<tr><td>朱（直すと決めた行）</td><td class="n">'+markTotal()+'</td></tr></tbody></table>';
@@ -1861,6 +1864,7 @@ function renderConf(){
   $("c-when").innerHTML=WHEN.map(w=>'<button class="pick '+(conf.wordWhen===w.id?"on":"")+'" data-w="'+w.id+'"><b>'+esc(w.name)+'</b><span>'+esc(w.note)+'</span></button>').join("");
   $("c-when").querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ conf.wordWhen=b.dataset.w; saveConf(); renderConf(); });
   $("c-mine").classList.toggle("on",conf.mine!==false);
+  $("c-pen").classList.toggle("on",conf.pen===true);
   $("c-dir").classList.toggle("hide",!canDir());
   $("c-dirstat").textContent = !canDir()
     ? "この端末ではフォルダを選べません。控えはいつもの場所へダウンロードされ、同じ名前のファイルが増えていきます。"
@@ -1875,6 +1879,8 @@ function renderConf(){
   });
   html+='<p class="cat-h">読む速さ</p><div class="field" style="margin-top:8px"><label for="c-cpm">残り時間の見積りに使う字数（一分あたり）</label><input id="c-cpm" type="number" inputmode="numeric" value="'+(conf.cpm||200)+'"></div>';
   $("c-list").innerHTML=html;
+  $("c-list").style.opacity = conf.pen===true? "1" : ".45";
+  $("c-penlead").style.opacity = conf.pen===true? "1" : ".45";
   $("c-list").querySelectorAll(".sw").forEach(b=>b.onclick=()=>{
     const id=b.dataset.id; conf.rules[id]=conf.rules[id]===false; b.classList.toggle("on",conf.rules[id]!==false); saveConf();
   });
@@ -1890,7 +1896,7 @@ function saveConf(){ jset(K_CONF,conf); if(cur){ buildMine(); penCache=readWork(
    ============================================================ */
 $("ab-body").innerHTML=
  '<p class="lead">推敲は、終わりが見えないから重くなります。この道具は本文を二千字前後の<em>区切り</em>に割って、面付けのマスで残りを見せるだけの器です。</p>'+
- '<p class="cat-h">朱と付箋と鉛筆</p><p class="lead"><em>朱</em>は「直す」と決めた行に置く印。<em>付箋</em>は「ここが変だけれど、どう直せばいいか今は分からない」ところに貼っておくもの。行の右の二つのボタンを押すだけで付きます。貼るとその場に「なんとなく変」「重い」などの札とひとこと欄が出るので、言葉になっていれば足しておけます（なくても構いません）。続けて何行かに貼れば、その範囲でひとつづきの相談になります。どこが変か行を指せないときは、本文の下の<em>この区切りごと相談する</em>で、区切りまるごとを相談に出せます。付箋は控えの「付箋」で集めて見返せるので、いま決められないことを抱えたまま先へ進めます。<em>鉛筆</em>は機械が引く線。字面の規則で拾えるものだけを先に拾ってあります。鉛筆はうるさければ設定で消せます。消しても本文は変わりません。</p>'+
+ '<p class="cat-h">朱と付箋と鉛筆</p><p class="lead"><em>朱</em>は「直す」と決めた行に置く印。<em>付箋</em>は「ここが変だけれど、どう直せばいいか今は分からない」ところに貼っておくもの。行の右の二つのボタンを押すだけで付きます。貼るとその場に「なんとなく変」「重い」などの札とひとこと欄が出るので、言葉になっていれば足しておけます（なくても構いません）。続けて何行かに貼れば、その範囲でひとつづきの相談になります。どこが変か行を指せないときは、本文の下の<em>この区切りごと相談する</em>で、区切りまるごとを相談に出せます。付箋は控えの「付箋」で集めて見返せるので、いま決められないことを抱えたまま先へ進めます。<em>鉛筆</em>は機械が引く線。二種類あって、ひとつは字面の規則（三点リーダの数や表記のゆれ）で、これはふだん止めてあります。もうひとつは<em>あなた自身の直し</em>から作るもので、同じ直しを二回すると、その形が残っている行に先回りして引かれます。どちらも設定で止められ、止めても本文は変わりません。</p>'+
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
  '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。相談の画面で作品の世界を選んでおくと、票の頭に「先に開いてほしいスキル」（文体の正本、その作品の設定の正本、R18の様式）が並ぶので、Claudeは記憶ではなく正本を見て答えます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+
@@ -1929,6 +1935,7 @@ $("c-back").onclick=()=>{ if(cur){ renderWork(); view("work"); } else { renderHo
 $("ab-back").onclick=()=>{ renderHome(); view("home"); };
 $("btn-conf").onclick=renderConf;
 $("c-dir").onclick=pickDir;
+$("c-pen").onclick=()=>{ conf.pen=conf.pen!==true; saveConf(); renderConf(); };
 $("c-mine").onclick=()=>{ conf.mine=conf.mine===false; saveConf(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats); renderConf(); };
 $("btn-conf2").onclick=renderConf;
 $("btn-about").onclick=()=>view("about");
@@ -1952,7 +1959,7 @@ $("a-save").onclick=()=>{
   if(jset("shuire:work:"+id,cur)){
     yure=buildYure(cur); penCache=readWork(cur,kindOf(cur.kind).cats);
     renderWork(); view("work");
-    toast(blocks.length+"区切りに分けました　鉛筆"+penTotal()+"行");
+    toast(blocks.length+"区切りに分けました"+(penTotal()? "　鉛筆"+penTotal()+"行" : ""));
   }
 };
 
