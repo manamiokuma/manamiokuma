@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>日繰り</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;600&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --paper:#f3f1ea;
+  --paper2:#e9e5d9;
+  --sink:#dedac9;
+  --rule:#d3cdbc;
+  --hair:#c6bfab;
+  --ink:#1e2429;
+  --dim:#6f6a5f;
+  --ai:#2d4a76;
+  --ai-bg:#e2e6ee;
+  --shu:#ab3721;
+  --shu-bg:#f0e2dd;
+  --midori:#3a6650;
+  --gothic:"Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic","Noto Sans JP",system-ui,sans-serif;
+  --mincho:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",YuMincho,"Noto Serif JP",serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#16171a;
+    --paper2:#1e2023;
+    --sink:#26282b;
+    --rule:#33353a;
+    --hair:#43464c;
+    --ink:#e9e4d8;
+    --dim:#98938a;
+    --ai:#93aed8;
+    --ai-bg:#22293a;
+    --shu:#e07a60;
+    --shu-bg:#33221e;
+    --midori:#7cae91;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#16171a;
+  --paper2:#1e2023;
+  --sink:#26282b;
+  --rule:#33353a;
+  --hair:#43464c;
+  --ink:#e9e4d8;
+  --dim:#98938a;
+  --ai:#93aed8;
+  --ai-bg:#22293a;
+  --shu:#e07a60;
+  --shu-bg:#33221e;
+  --midori:#7cae91;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--gothic);
+  font-size:15px;line-height:1.72;-webkit-text-size-adjust:100%}
+button,input,select,textarea{font:inherit;color:inherit}
+button{background:none;border:none;padding:0;cursor:pointer;color:inherit}
+:focus-visible{outline:2px solid var(--ai);outline-offset:2px}
+.wrap{max-width:460px;margin:0 auto;padding:0 18px calc(96px + env(safe-area-inset-bottom))}
+
+/* 見出し */
+.brand{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding:calc(18px + env(safe-area-inset-top)) 0 14px}
+.brand h1{font-family:var(--mincho);font-weight:600;font-size:22px;letter-spacing:.24em;margin:0}
+.brand .st{font-size:11.5px;color:var(--dim);letter-spacing:.04em;white-space:nowrap}
+
+/* 帯 */
+.banner{background:var(--shu-bg);color:var(--shu);border-left:3px solid var(--shu);
+  padding:10px 12px;font-size:13px;line-height:1.6;margin-bottom:14px;border-radius:0 2px 2px 0}
+.banner button{color:inherit;text-decoration:underline;font-size:12.5px;margin-left:8px}
+.banner.ok{background:var(--ai-bg);color:var(--ai);border-left-color:var(--ai)}
+
+/* いちばんの数字 */
+.hero{padding:14px 0 22px;border-bottom:1px solid var(--rule)}
+.hero .lbl{font-size:12.5px;letter-spacing:.18em;color:var(--dim)}
+.hero .num{font-family:var(--mincho);font-weight:600;line-height:.98;letter-spacing:-.01em;
+  display:flex;align-items:baseline;gap:.14em;margin:.12em 0 .1em;font-variant-numeric:tabular-nums}
+.hero .num b{font-size:clamp(62px,21vw,92px);font-weight:600}
+.hero .num i{font-style:normal;font-size:20px;font-family:var(--gothic);color:var(--dim);letter-spacing:.06em}
+.hero .sub{font-size:13.5px;color:var(--dim);letter-spacing:.04em}
+.hero.low .num b{color:var(--shu)}
+.warn{display:flex;gap:8px;align-items:flex-start;margin-top:14px;color:var(--shu);
+  font-size:13px;line-height:1.65}
+.warn::before{content:"";flex:none;width:3px;align-self:stretch;background:var(--shu)}
+
+/* 二つの数 */
+.facts{display:flex;margin:0;border-bottom:1px solid var(--rule)}
+.facts>div{flex:1;padding:14px 0}
+.facts>div+div{border-left:1px solid var(--rule);padding-left:16px}
+.facts dt{font-size:11.5px;color:var(--dim);letter-spacing:.02em;line-height:1.5}
+.facts dd{margin:2px 0 0;font-family:var(--mincho);font-size:27px;font-weight:600;
+  font-variant-numeric:tabular-nums;line-height:1.2}
+.facts dd span{font-family:var(--gothic);font-size:12.5px;font-weight:400;color:var(--dim);margin-left:2px}
+
+/* 節 */
+section{padding:20px 0 4px}
+h2{font-family:var(--mincho);font-size:15px;font-weight:600;letter-spacing:.16em;margin:0 0 10px;
+  color:var(--ink)}
+h2 .n{font-family:var(--gothic);font-size:11.5px;letter-spacing:.02em;color:var(--dim);
+  font-weight:400;margin-left:8px}
+.empty{color:var(--dim);font-size:13px;padding:6px 0 10px}
+
+/* 行 */
+.row{display:flex;align-items:flex-start;gap:11px;width:100%;text-align:left;
+  padding:11px 0;border-bottom:1px solid var(--rule);min-height:52px}
+.row .d{flex:none;width:58px;font-variant-numeric:tabular-nums;font-size:13px;color:var(--dim);
+  letter-spacing:.02em;padding-top:1px}
+.row .d b{font-weight:600;color:var(--ink);font-size:14px}
+.row .body{flex:1;min-width:0}
+.row .t{font-size:14.5px;line-height:1.5;word-break:break-word}
+.row .m{font-size:11.5px;color:var(--dim);margin-top:2px;letter-spacing:.02em;
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.row .go{flex:none;color:var(--dim);font-size:12px;padding-top:3px}
+.row.today{background:linear-gradient(90deg,var(--ai-bg),transparent 70%);
+  margin:0 -8px;padding-left:8px;padding-right:8px}
+
+/* 印 */
+.r18{flex:none;font-size:10px;letter-spacing:.06em;color:var(--shu);border:1px solid var(--shu);
+  padding:0 4px;border-radius:2px;line-height:1.6}
+.pill{font-size:11px;letter-spacing:.06em;padding:1px 7px;border-radius:2px;border:1px solid var(--hair);
+  color:var(--dim);white-space:nowrap}
+.pill.ai{color:var(--ai);border-color:var(--ai)}
+.pill.md{color:var(--midori);border-color:var(--midori)}
+.pill.on{background:var(--midori);border-color:var(--midori);color:var(--paper)}
+.book{margin-top:8px;font-size:11.5px;letter-spacing:.06em;color:var(--ai);
+  border-top:1px dashed var(--ai);padding-top:6px}
+
+/* 作品 */
+.work{display:block;width:100%;text-align:left;padding:14px 0;border-bottom:1px solid var(--rule)}
+.work .wt{font-family:var(--mincho);font-size:17.5px;font-weight:600;line-height:1.45}
+.work .wm{font-size:12px;color:var(--dim);margin-top:3px;letter-spacing:.02em}
+.work .wf{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin-top:8px;
+  font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+
+/* 絞り込み */
+.chips{display:flex;flex-wrap:wrap;gap:7px;padding:2px 0 12px}
+.chip{font-size:12.5px;padding:5px 11px;border:1px solid var(--hair);border-radius:2px;color:var(--dim)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
+
+/* 入力 */
+.field{display:block;padding:9px 0}
+.field>span{display:block;font-size:11.5px;letter-spacing:.08em;color:var(--dim);margin-bottom:4px}
+.field input,.field select,.field textarea{width:100%;background:var(--paper2);border:1px solid var(--rule);
+  border-radius:2px;padding:9px 10px;font-size:15px;line-height:1.6;color:var(--ink)}
+.field textarea{min-height:120px;resize:vertical;font-size:14px}
+.field.half{flex:1}
+.pair{display:flex;gap:10px}
+.hint{font-size:11.5px;color:var(--dim);line-height:1.6;margin-top:4px}
+.hint.shu{color:var(--shu)}
+
+/* 押すもの */
+.btn{display:block;width:100%;text-align:center;padding:13px 14px;border:1px solid var(--ink);
+  border-radius:2px;font-size:14.5px;letter-spacing:.06em;margin-top:12px}
+.btn.fill{background:var(--ink);color:var(--paper)}
+.btn.quiet{border-color:var(--hair);color:var(--dim)}
+.btn.danger{border-color:var(--shu);color:var(--shu)}
+.btns{display:flex;gap:10px}
+.btns .btn{margin-top:12px}
+.link{color:var(--ai);font-size:13px;text-decoration:underline;text-underline-offset:3px}
+.back{display:inline-block;padding:12px 0 6px;color:var(--dim);font-size:13px}
+
+/* 予約のチェック */
+.check{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;width:56px;min-height:50px;border-left:1px solid var(--rule);color:var(--dim);font-size:10px;
+  letter-spacing:.04em}
+.check .box{width:22px;height:22px;border:1.5px solid var(--hair);border-radius:2px;
+  display:flex;align-items:center;justify-content:center;font-size:14px;color:transparent}
+.check.on{color:var(--midori)}
+.check.on .box{border-color:var(--midori);background:var(--midori);color:var(--paper)}
+
+/* 話の編集行 */
+.ep{display:flex;gap:9px;align-items:center;padding:9px 0;border-bottom:1px solid var(--rule)}
+.ep .ix{flex:none;width:22px;font-variant-numeric:tabular-nums;color:var(--dim);font-size:12.5px}
+.ep .ti{flex:1;min-width:0;background:var(--paper2);border:1px solid var(--rule);border-radius:2px;
+  padding:7px 8px;font-size:14px}
+.ep .ch{flex:none;width:72px;background:var(--paper2);border:1px solid var(--rule);border-radius:2px;
+  padding:7px 6px;font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.ep .tg{flex:none;width:34px;height:32px;border:1px solid var(--hair);border-radius:2px;
+  font-size:10px;color:var(--dim);letter-spacing:.02em}
+.ep .tg.on{border-color:var(--shu);color:var(--shu)}
+.tg[disabled]{opacity:.3}
+
+/* タグ */
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.tag{font-size:12.5px;padding:4px 9px;border:1px solid var(--hair);border-radius:2px;color:var(--ink);
+  background:var(--paper2)}
+.tag b{font-weight:400;color:var(--dim);margin-left:5px}
+.tag.add{background:none;color:var(--dim);border-style:dashed}
+
+/* 下の帯 */
+.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper2);border-top:1px solid var(--rule);
+  display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:9}
+.tabs button{flex:1;padding:11px 2px 12px;font-size:12.5px;letter-spacing:.08em;color:var(--dim);
+  display:flex;flex-direction:column;align-items:center;gap:5px}
+.tabs button .dot{width:4px;height:4px;border-radius:50%;background:transparent}
+.tabs button.on{color:var(--ink)}
+.tabs button.on .dot{background:var(--ai)}
+
+.note{font-size:12.5px;color:var(--dim);line-height:1.75;padding:8px 0 0}
+.sep{height:1px;background:var(--rule);margin:22px 0 0}
+.tabular{font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:no-preference){
+  .row,.work{transition:background .12s ease}
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="brand">
+    <h1>日繰り</h1>
+    <div class="st" id="st">読み込んでいます</div>
+  </header>
+  <div id="banner"></div>
+  <main id="app"></main>
+</div>
+<nav class="tabs" id="tabs">
+  <button data-tab="dash"><span class="dot"></span>いま</button>
+  <button data-tab="works"><span class="dot"></span>作品</button>
+  <button data-tab="split"><span class="dot"></span>分割</button>
+  <button data-tab="sched"><span class="dot"></span>予定</button>
+</nav>
+
+<script>
+(function(){
+"use strict";
+
+/* ============ 下ごしらえ ============ */
+var STATUSES=["未検査","検査済","投稿済","保留"];
+var WD=["日","月","火","水","木","金","土"];
+var KEY="novel-queue:data";
+
+var S={works:[],episodes:[],settings:{time:"19:00",warnDays:3}};
+var view={name:"dash",workId:null,epId:null,filter:"すべて"};
+var ready=false;
+
+function uid(){return Math.random().toString(36).slice(2,8)+Date.now().toString(36).slice(-3)}
+var ESC={"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"};
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return ESC[c]})}
+function pad(n){return (n<10?"0":"")+n}
+function today(){var d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
+function dpart(s){return s?String(s).slice(0,10):null}
+function tpart(s){return s&&String(s).length>=16?String(s).slice(11,16):(S.settings.time||"19:00")}
+function joinDT(d,t){return d?d+"T"+(t||S.settings.time||"19:00"):null}
+function dobj(ds){var p=String(ds).split("-");return new Date(+p[0],+p[1]-1,+p[2])}
+function shift(ds,n){var d=dobj(ds);d.setDate(d.getDate()+n);
+  return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
+function md(ds){var d=dobj(ds);return (d.getMonth()+1)+"/"+d.getDate()}
+function wd(ds){return WD[dobj(ds).getDay()]}
+function longDate(ds){var d=dobj(ds);return (d.getMonth()+1)+"月"+d.getDate()+"日"}
+function num(n){return Number(n||0).toLocaleString("ja-JP")}
+function work(id){for(var i=0;i<S.works.length;i++)if(S.works[i].id===id)return S.works[i];return null}
+function ep(id){for(var i=0;i<S.episodes.length;i++)if(S.episodes[i].id===id)return S.episodes[i];return null}
+function epsOf(id){return S.episodes.filter(function(e){return e.workId===id})
+  .sort(function(a,b){return (a.index||0)-(b.index||0)})}
+function scheduled(){return S.episodes.filter(function(e){return e.scheduledAt})
+  .sort(function(a,b){return String(a.scheduledAt)<String(b.scheduledAt)?-1:1})}
+
+/* ============ 数え ============ */
+function stats(){
+  var t=today(),seen={},days=[];
+  S.episodes.forEach(function(e){
+    if(e.reserved&&e.scheduledAt&&dpart(e.scheduledAt)>=t){
+      var d=dpart(e.scheduledAt); if(!seen[d]){seen[d]=1;days.push(d)}}
+  });
+  days.sort();
+  return {days:days.length,last:days.length?days[days.length-1]:null,
+    waiting:S.episodes.filter(function(e){return e.checked&&!e.reserved}).length,
+    unchecked:S.works.filter(function(w){return w.status==="未検査"}).length};
+}
+
+/* ============ 保存 ============ */
+var store={kind:"none"},saveTimer=null,statusTimer=null;
+
+function setStatus(t){var n=document.getElementById("st");if(n)n.textContent=t}
+function banner(msg,withHelp,tone){
+  var n=document.getElementById("banner");if(!n)return;
+  n.innerHTML='<div class="banner'+(tone==="ok"?" ok":"")+'">'+esc(msg)+
+    (withHelp?'<button data-act="data">控えを開く</button>':'')+'</div>';
+}
+function clearBanner(){var n=document.getElementById("banner");if(n)n.innerHTML=""}
+
+function openStore(){
+  return Promise.resolve().then(function(){
+    var w=window.storage;
+    if(w&&(typeof w.get==="function"||typeof w.getItem==="function")){
+      store={kind:"host",label:"この環境の保存領域",
+        read:function(){return Promise.resolve(w.get?w.get(KEY):w.getItem(KEY))},
+        write:function(v){return Promise.resolve(w.set?w.set(KEY,v):w.setItem(KEY,v))}};
+      return;
+    }
+    if(window.claude&&typeof window.claude.use==="function"){
+      return window.claude.use("db").then(function(db){
+        if(!db)return;
+        var ref=db.doc("novel-queue/data");
+        store={kind:"db",label:"この道具の保存領域",
+          read:function(){return ref.get().then(function(s){
+            return s.exists?(s.data()||{}).json:null})},
+          write:function(v){return ref.set({json:v,savedAt:new Date().toISOString()})}};
+      });
+    }
+  }).catch(function(e){
+    store={kind:"none"};
+    banner("保存先につながりませんでした（"+(e&&e.message||e)+"）。この画面での変更は残りません。",true);
+  });
+}
+
+function load(){
+  return openStore().then(function(){
+    if(!store.read){
+      ready=true;render();
+      banner("保存先が見つかりません。この画面での変更は残りません。控えから書き出して持ち出してください。",true);
+      setStatus("保存できません");return;
+    }
+    return store.read().then(function(raw){
+      if(raw){
+        try{adopt(JSON.parse(raw))}
+        catch(e){banner("保存されていた内容を読めませんでした（"+(e&&e.message||e)+"）。控えから読み込み直してください。",true)}
+      }
+      ready=true;render();setStatus("保存ずみ");
+    });
+  }).catch(function(e){
+    ready=true;render();
+    banner("読み込みに失敗しました（"+(e&&e.message||e)+"）。",true);
+    setStatus("読み込めません");
+  });
+}
+
+function adopt(d){
+  if(!d||typeof d!=="object")return;
+  S.works=Array.isArray(d.works)?d.works:[];
+  S.episodes=Array.isArray(d.episodes)?d.episodes:[];
+  S.settings=Object.assign({time:"19:00",warnDays:3},d.settings||{});
+}
+
+function save(){
+  setStatus("保存中");
+  if(saveTimer)clearTimeout(saveTimer);
+  saveTimer=setTimeout(flush,700);
+}
+function flush(){
+  if(saveTimer){clearTimeout(saveTimer);saveTimer=null}
+  if(!store.write){setStatus("保存できません");return Promise.resolve()}
+  var payload;
+  try{payload=JSON.stringify(S)}
+  catch(e){banner("保存するかたちに直せませんでした（"+(e&&e.message||e)+"）。",true);return Promise.resolve()}
+  return Promise.resolve(store.write(payload)).then(function(){
+    setStatus("保存しました");
+    if(statusTimer)clearTimeout(statusTimer);
+    statusTimer=setTimeout(function(){setStatus("保存ずみ")},2200);
+  }).catch(function(e){
+    setStatus("保存できませんでした");
+    banner("保存できませんでした（"+(e&&e.message||e)+"）。控えから書き出して残しておいてください。",true);
+  });
+}
+window.addEventListener("pagehide",function(){if(saveTimer)flush()});
+document.addEventListener("visibilitychange",function(){
+  if(document.visibilityState==="hidden"&&saveTimer)flush()});
+
+/* ============ 描く ============ */
+function go(v){Object.assign(view,v);render();window.scrollTo(0,0)}
+function render(){
+  var y=window.scrollY;
+  var app=document.getElementById("app");
+  app.innerHTML=!ready?'<div class="empty" style="padding:40px 0">読み込んでいます…</div>':
+    view.name==="dash"?vDash():
+    view.name==="works"?vWorks():
+    view.name==="work"?vWork():
+    view.name==="split"?vSplit():
+    view.name==="sched"?vSched():
+    view.name==="ep"?vEp():
+    view.name==="data"?vData():"";
+  var tab=view.name==="work"?"works":(view.name==="ep"?"sched":view.name);
+  var bs=document.querySelectorAll("#tabs button");
+  for(var i=0;i<bs.length;i++)bs[i].className=bs[i].getAttribute("data-tab")===tab?"on":"";
+  window.scrollTo(0,y);
+}
+
+/* ---- いま ---- */
+function vDash(){
+  var s=stats(),t=today(),h="";
+  var low=s.days<(S.settings.warnDays||3);
+  h+='<div class="hero'+(low?" low":"")+'">'+
+     '<div class="lbl">予約ずみ</div>'+
+     '<div class="num"><b>'+s.days+'</b><i>日ぶん</i></div>'+
+     '<div class="sub">'+(s.last?longDate(s.last)+"まで":"pixivに入れた予約はまだありません")+'</div>';
+  if(low){
+    h+='<div class="warn"><div>予約の在庫が'+(s.days===0?"ありません":"残り"+s.days+"日です")+"。"+
+       (s.waiting?"仕込み待ちが"+s.waiting+"本あります。予定の画面で予約を入れてください。":"検査ずみの話も切れています。次の束を分割してください。")+
+       '</div></div>';
+  }
+  h+='</div>';
+
+  h+='<dl class="facts">'+
+     '<div><dt>仕込み待ち<br>（検査済・未予約）</dt><dd>'+s.waiting+'<span>本</span></dd></div>'+
+     '<div><dt>未検査の作品</dt><dd>'+s.unchecked+'<span>本</span></dd></div>'+
+     '</dl>';
+
+  var up=scheduled().filter(function(e){return dpart(e.scheduledAt)>=t}).slice(0,6);
+  h+='<section><h2>次の投稿</h2>';
+  if(!up.length){h+='<div class="empty">日付の入った話がありません。分割の画面で日付を振ってください。</div>'}
+  else{
+    up.forEach(function(e){
+      var d=dpart(e.scheduledAt),w=work(e.workId);
+      h+='<button class="row'+(d===t?" today":"")+'" data-act="ep" data-id="'+e.id+'">'+
+        '<span class="d"><b>'+md(d)+'</b> '+wd(d)+'</span>'+
+        '<span class="body"><span class="t">'+esc(e.title)+'</span>'+
+        '<span class="m">'+(e.isR18?'<span class="r18">R-18</span>':"")+
+          '<span class="tabular">'+num(e.chars)+'字</span>'+
+          '<span>'+tpart(e.scheduledAt)+'</span>'+
+          (e.reserved?'<span class="pill md">予約ずみ</span>':'<span class="pill">未予約</span>')+
+          (w&&String(e.title).indexOf(w.title)<0?'<span>'+esc(w.title)+'</span>':"")+
+        '</span></span><span class="go">›</span></button>';
+    });
+  }
+  h+='</section>';
+
+  h+=nextMoves();
+  return h;
+}
+
+function nextMoves(){
+  var h='<section><h2>次の手</h2>',n=0,t=today();
+  var undated=S.episodes.filter(function(e){return e.checked&&!e.scheduledAt});
+  if(undated.length){
+    var w=work(undated[0].workId);
+    h+=move("日付のない話が"+undated.length+"本","分割の画面で「毎日で割り当て」",
+      'data-act="split-go" data-id="'+(w?w.id:"")+'"');n++;
+  }
+  var unres=S.episodes.filter(function(e){return e.checked&&!e.reserved&&e.scheduledAt});
+  if(unres.length){
+    h+=move("pixivに未入力の予約が"+unres.length+"本","予定の画面で入れ終えた印をつける",'data-act="tab" data-id="sched"');n++;
+  }
+  var cand=S.works.filter(function(w){return w.status==="未検査"&&!w.isBook});
+  cand.slice(0,3-n).forEach(function(w){
+    h+=move(esc(w.title),"未検査・"+num(w.totalChars)+"字 — manuscript-qa にかける",
+      'data-act="work" data-id="'+w.id+'"');n++;
+  });
+  if(!n)h+='<div class="empty">いまやることはありません。</div>';
+  h+='</section>';
+  return h;
+}
+function move(t,m,attr){
+  return '<button class="row" '+attr+'><span class="body"><span class="t">'+t+'</span>'+
+    '<span class="m">'+m+'</span></span><span class="go">›</span></button>';
+}
+
+/* ---- 作品 ---- */
+function vWorks(){
+  var f=view.filter,h="";
+  h+='<div class="chips">';
+  ["すべて"].concat(STATUSES).concat(["本にする"]).forEach(function(k){
+    h+='<button class="chip'+(f===k?" on":"")+'" data-act="filter" data-id="'+k+'">'+k+'</button>';
+  });
+  h+='</div>';
+  var list=S.works.filter(function(w){
+    return f==="すべて"?true:f==="本にする"?!!w.isBook:w.status===f;
+  });
+  if(!list.length)h+='<div class="empty">この絞り込みに当てはまる作品はありません。</div>';
+  list.forEach(function(w){
+    var es=epsOf(w.id),done=es.filter(function(e){return e.reserved}).length;
+    h+='<button class="work" data-act="work" data-id="'+w.id+'">'+
+      '<div class="wt">'+esc(w.title)+'</div>'+
+      '<div class="wm">'+esc(w.fandom||"ジャンル未記入")+'</div>'+
+      '<div class="wf">'+statusPill(w.status)+
+        '<span>'+num(w.totalChars)+'字</span>'+
+        '<span>'+es.length+'話'+(es.length?"（予約"+done+"）":"")+'</span>'+
+      '</div>'+
+      (w.isBook?'<div class="book">本にする ─ pixivには出さない</div>':"")+
+      '</button>';
+  });
+  h+='<button class="btn" data-act="new-work">作品を足す</button>';
+  h+='<div class="sep"></div><div class="note">本にする作品は、うっかり投稿しないように上の帯で分けてあります。</div>';
+  return h;
+}
+function statusPill(s){
+  var c=s==="検査済"?"pill ai":s==="投稿済"?"pill md":"pill";
+  return '<span class="'+c+'">'+esc(s||"未検査")+'</span>';
+}
+
+/* ---- 作品の中身 ---- */
+function vWork(){
+  var w=work(view.workId);
+  if(!w)return '<div class="empty">作品が見つかりません。</div>';
+  var es=epsOf(w.id),h="";
+  h+='<button class="back" data-act="tab" data-id="works">‹ 作品一覧</button>';
+  h+='<label class="field"><span>タイトル</span><input value="'+esc(w.title)+'" data-w="'+w.id+'" data-f="title"></label>';
+  h+='<label class="field"><span>ジャンル・CP</span><input value="'+esc(w.fandom)+'" data-w="'+w.id+'" data-f="fandom"></label>';
+  h+='<div class="pair">'+
+     '<label class="field half"><span>総字数</span><input type="number" inputmode="numeric" value="'+(w.totalChars||0)+'" data-w="'+w.id+'" data-f="totalChars"></label>'+
+     '<label class="field half"><span>状態</span><select data-w="'+w.id+'" data-f="status">'+
+       STATUSES.map(function(s){return '<option'+(w.status===s?" selected":"")+'>'+s+'</option>'}).join("")+
+     '</select></label></div>';
+  h+='<label class="field"><span>刊行</span><select data-w="'+w.id+'" data-f="isBook">'+
+     '<option value=""'+(!w.isBook?" selected":"")+'>Webに出す</option>'+
+     '<option value="1"'+(w.isBook?" selected":"")+'>本にする（Webに出さない）</option></select></label>';
+  h+='<label class="field"><span>覚え書き</span><textarea style="min-height:70px" data-w="'+w.id+'" data-f="note">'+esc(w.note)+'</textarea></label>';
+
+  h+='<section><h2>話<span class="n">'+es.length+'本</span></h2>';
+  if(!es.length)h+='<div class="empty">まだ分けていません。分割の画面へ。</div>';
+  es.forEach(function(e){
+    var d=dpart(e.scheduledAt);
+    h+='<button class="row" data-act="ep" data-id="'+e.id+'">'+
+      '<span class="d">'+(d?'<b>'+md(d)+'</b> '+wd(d):'<span style="color:var(--dim)">未定</span>')+'</span>'+
+      '<span class="body"><span class="t">'+esc(e.title)+'</span>'+
+      '<span class="m">'+(e.isR18?'<span class="r18">R-18</span>':"")+
+        '<span class="tabular">'+num(e.chars)+'字</span>'+
+        (e.checked?'<span class="pill ai">検査済</span>':'<span class="pill">未検査</span>')+
+        (e.reserved?'<span class="pill md">予約ずみ</span>':"")+
+      '</span></span><span class="go">›</span></button>';
+  });
+  h+='</section>';
+  h+='<button class="btn fill" data-act="split-go" data-id="'+w.id+'">分割・日付を振る</button>';
+  h+='<button class="btn danger" data-act="del-work" data-id="'+w.id+'">この作品と話を消す</button>';
+  return h;
+}
+
+/* ---- 分割 ---- */
+function vSplit(){
+  var h="";
+  if(!view.workId){
+    h+='<section><h2>どの作品を分けますか</h2>';
+    if(!S.works.length)h+='<div class="empty">まず作品の画面で作品を足してください。</div>';
+    S.works.forEach(function(w){
+      h+='<button class="row" data-act="split-go" data-id="'+w.id+'">'+
+        '<span class="body"><span class="t">'+esc(w.title)+'</span>'+
+        '<span class="m">'+epsOf(w.id).length+'話'+
+        (w.isBook?' <span class="pill ai">本にする</span>':"")+'</span></span>'+
+        '<span class="go">›</span></button>';
+    });
+    h+='</section>';return h;
+  }
+  var w=work(view.workId);
+  if(!w)return '<div class="empty">作品が見つかりません。</div>';
+  var es=epsOf(w.id);
+  h+='<button class="back" data-act="split-pick">‹ ほかの作品</button>';
+  h+='<h2 style="font-size:19px;margin:6px 0 2px">'+esc(w.title)+'</h2>';
+  h+='<div class="note" style="padding-bottom:10px">'+esc(w.fandom||"")+
+     (w.isBook?' ／ <span style="color:var(--ai)">本にする作品です</span>':"")+'</div>';
+  h+='<div class="note">本文は扱いません。話数と、各話の字数・タイトル・R-18だけを入れます。</div>';
+
+  h+='<section><h2>話<span class="n">'+es.length+'本 ／ '+num(es.reduce(function(a,e){return a+(+e.chars||0)},0))+'字</span></h2>';
+  es.forEach(function(e){
+    h+='<div class="ep">'+
+      '<span class="ix">'+e.index+'</span>'+
+      '<input class="ti" value="'+esc(e.title)+'" data-e="'+e.id+'" data-f="title">'+
+      '<input class="ch" type="number" inputmode="numeric" value="'+(e.chars||0)+'" data-e="'+e.id+'" data-f="chars">'+
+      '<button class="tg'+(e.isR18?" on":"")+'" data-act="tg-r18" data-id="'+e.id+'">R18</button>'+
+      '</div>';
+  });
+  h+='<div class="btns">'+
+     '<button class="btn" data-act="add-ep" data-id="'+w.id+'">話を足す</button>'+
+     '<button class="btn quiet" data-act="renumber" data-id="'+w.id+'">番号でタイトル</button>'+
+     '</div>';
+  h+='</section>';
+
+  h+='<div class="sep"></div>';
+  var dated=es.filter(function(e){return e.scheduledAt}).length;
+  h+='<section><h2>毎日で割り当て<span class="n">日付あり'+dated+'本 ／ なし'+(es.length-dated)+'本</span></h2>';
+  h+='<div class="pair">'+
+     '<label class="field half"><span>開始日</span><input type="date" id="startDate" value="'+(view.start||today())+'"></label>'+
+     '<label class="field half"><span>時刻</span><input type="time" id="startTime" value="'+(S.settings.time||"19:00")+'"></label>'+
+     '</div>';
+  h+='<div class="hint'+((S.settings.time||"19:00")>="20:00"?" shu":"")+'">'+
+     ((S.settings.time||"19:00")>="20:00"
+      ?"20時以降はその日のランキング集計に乗りません。"
+      :"20時より前に出す運用に合わせています。")+'</div>';
+  h+='<label class="field"><span>振りかた</span><select id="assignMode">'+
+     '<option value="empty">日付のない話だけに振る</option>'+
+     '<option value="all">ぜんぶ振り直す</option></select></label>';
+  h+='<button class="btn fill" data-act="assign" data-id="'+w.id+'">1日1本で日付を振る</button>';
+  h+='<div class="hint">ほかの話ですでに埋まっている日は飛ばして、次の空き日に置きます。</div>';
+  h+='</section>';
+  return h;
+}
+
+/* ---- 予定 ---- */
+function vSched(){
+  var t=today(),h="",list=scheduled();
+  var past=list.filter(function(e){return dpart(e.scheduledAt)<t});
+  var future=list.filter(function(e){return dpart(e.scheduledAt)>=t});
+  var undated=S.episodes.filter(function(e){return !e.scheduledAt});
+
+  h+='<section><h2>これから<span class="n">'+future.length+'本</span></h2>';
+  if(!future.length)h+='<div class="empty">日付の入った話がありません。</div>';
+  future.forEach(function(e,i){
+    h+=schedRow(e,i,future);
+  });
+  h+='</section>';
+
+  if(undated.length){
+    h+='<div class="sep"></div><section><h2>日付なし<span class="n">'+undated.length+'本</span></h2>';
+    undated.forEach(function(e){
+      h+='<button class="row" data-act="ep" data-id="'+e.id+'">'+
+        '<span class="d" style="color:var(--dim)">未定</span>'+
+        '<span class="body"><span class="t">'+esc(e.title)+'</span>'+
+        '<span class="m">'+(e.isR18?'<span class="r18">R-18</span>':"")+
+          '<span class="tabular">'+num(e.chars)+'字</span>'+
+          (e.checked?'<span class="pill ai">検査済</span>':'<span class="pill">未検査</span>')+
+        '</span></span><span class="go">›</span></button>';
+    });
+    h+='</section>';
+  }
+  if(past.length){
+    h+='<div class="sep"></div><section><h2>すぎた日<span class="n">'+past.length+'本</span></h2>';
+    past.slice(-8).forEach(function(e){
+      var d=dpart(e.scheduledAt);
+      h+='<button class="row" data-act="ep" data-id="'+e.id+'" style="opacity:.62">'+
+        '<span class="d"><b>'+md(d)+'</b> '+wd(d)+'</span>'+
+        '<span class="body"><span class="t">'+esc(e.title)+'</span>'+
+        '<span class="m">'+(e.reserved?'<span class="pill md">予約ずみ</span>':'<span class="pill">未予約</span>')+'</span>'+
+        '</span><span class="go">›</span></button>';
+    });
+    h+='</section>';
+  }
+  h+='<div class="sep"></div><div class="note">チェックは「pixivの予約に入れ終えた」印です。文体検査の済みとは別に持っています。</div>';
+  return h;
+}
+function schedRow(e,i,arr){
+  var d=dpart(e.scheduledAt),t=today();
+  var h='<div class="row'+(d===t?" today":"")+'" style="align-items:stretch">';
+  h+='<button class="d" style="text-align:left;padding-top:2px" data-act="ep" data-id="'+e.id+'">'+
+     '<b>'+md(d)+'</b> '+wd(d)+'<br><span style="font-size:11px">'+tpart(e.scheduledAt)+'</span></button>';
+  h+='<button class="body" style="text-align:left" data-act="ep" data-id="'+e.id+'">'+
+     '<span class="t">'+esc(e.title)+'</span><span class="m">'+
+     (e.isR18?'<span class="r18">R-18</span>':"")+
+     '<span class="tabular">'+num(e.chars)+'字</span>'+
+     (e.checked?"":'<span class="pill">未検査</span>')+
+     (tpart(e.scheduledAt)>="20:00"?'<span class="pill" style="color:var(--shu);border-color:var(--shu)">20時すぎ</span>':"")+
+     '</span></button>';
+  h+='<span style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex:none">'+
+     '<button class="tg" style="width:28px;height:24px" data-act="up" data-id="'+e.id+'"'+(i===0?" disabled":"")+'>↑</button>'+
+     '<button class="tg" style="width:28px;height:24px" data-act="down" data-id="'+e.id+'"'+(i===arr.length-1?" disabled":"")+'>↓</button>'+
+     '</span>';
+  h+='<button class="check'+(e.reserved?" on":"")+'" data-act="tg-res" data-id="'+e.id+'">'+
+     '<span class="box">✓</span>予約</button>';
+  h+='</div>';
+  return h;
+}
+
+/* ---- 話 ---- */
+function vEp(){
+  var e=ep(view.epId);
+  if(!e)return '<div class="empty">話が見つかりません。</div>';
+  var w=work(e.workId),h="";
+  h+='<button class="back" data-act="back">‹ もどる</button>';
+  h+='<label class="field"><span>表示タイトル</span><input value="'+esc(e.title)+'" data-e="'+e.id+'" data-f="title"></label>';
+  h+='<div class="note">'+esc(w?w.title:"")+' ／ 第'+e.index+'話'+
+     (w&&w.isBook?' ／ <span style="color:var(--ai)">本にする作品</span>':"")+'</div>';
+  h+='<div class="pair">'+
+     '<label class="field half"><span>字数</span><input type="number" inputmode="numeric" value="'+(e.chars||0)+'" data-e="'+e.id+'" data-f="chars"></label>'+
+     '<label class="field half"><span>区分</span><select data-e="'+e.id+'" data-f="isR18">'+
+       '<option value=""'+(!e.isR18?" selected":"")+'>全年齢</option>'+
+       '<option value="1"'+(e.isR18?" selected":"")+'>R-18</option></select></label></div>';
+  h+='<div class="pair">'+
+     '<label class="field half"><span>投稿日</span><input type="date" value="'+(dpart(e.scheduledAt)||"")+'" data-e="'+e.id+'" data-f="date"></label>'+
+     '<label class="field half"><span>時刻</span><input type="time" value="'+tpart(e.scheduledAt)+'" data-e="'+e.id+'" data-f="time"></label></div>';
+  if(tpart(e.scheduledAt)>="20:00")h+='<div class="hint shu">20時以降はその日のランキング集計に乗りません。</div>';
+
+  h+='<div class="pair" style="gap:10px;margin-top:6px">'+
+     '<button class="btn'+(e.checked?" fill":"")+'" style="margin-top:6px" data-act="tg-check" data-id="'+e.id+'">'+
+       (e.checked?"検査済":"未検査")+'</button>'+
+     '<button class="btn'+(e.reserved?" fill":"")+'" style="margin-top:6px" data-act="tg-res" data-id="'+e.id+'">'+
+       (e.reserved?"予約ずみ":"未予約")+'</button></div>';
+  h+='<div class="hint">左は文体検査と目視、右はpixivの予約に入れ終えたかどうかです。</div>';
+
+  h+='<label class="field"><span>キャプション</span><textarea data-e="'+e.id+'" data-f="caption" placeholder="pixivのキャプション本文">'+esc(e.caption)+'</textarea></label>';
+  h+='<button class="link" data-act="copy-cap" data-id="'+e.id+'">前の話からキャプションを写す</button>';
+
+  h+='<section><h2>タグ<span class="n">'+(e.tags||[]).length+'</span></h2>';
+  h+='<div class="tags">';
+  (e.tags||[]).forEach(function(tg,i){
+    h+='<button class="tag" data-act="del-tag" data-id="'+e.id+'" data-i="'+i+'">'+esc(tg)+'<b>×</b></button>';
+  });
+  h+='</div>';
+  h+='<label class="field"><span>足す（読点・改行で区切っても入ります）</span>'+
+     '<input id="tagInput" placeholder="原神, ファルカ×ローエン"></label>';
+  h+='<div class="btns"><button class="btn" data-act="add-tag" data-id="'+e.id+'">タグを足す</button>'+
+     '<button class="btn quiet" data-act="copy-tags" data-id="'+e.id+'">前の話から写す</button></div>';
+  var bank=tagBank().filter(function(x){return (e.tags||[]).indexOf(x.t)<0}).slice(0,12);
+  if(bank.length){
+    h+='<div class="hint" style="margin-top:14px">よく使うタグ（押すと足します）</div><div class="tags">';
+    bank.forEach(function(x){
+      h+='<button class="tag add" data-act="bank-tag" data-id="'+e.id+'" data-t="'+esc(x.t)+'">'+esc(x.t)+'<b>'+x.n+'</b></button>';
+    });
+    h+='</div>';
+    h+='<div class="hint">表記ゆれは流入に響きます。過去作と同じ表記から選んでください。</div>';
+  }
+  h+='</section>';
+  h+='<button class="btn danger" data-act="del-ep" data-id="'+e.id+'">この話を消す</button>';
+  return h;
+}
+function tagBank(){
+  var m={};
+  S.episodes.forEach(function(e){(e.tags||[]).forEach(function(t){m[t]=(m[t]||0)+1})});
+  return Object.keys(m).map(function(t){return {t:t,n:m[t]}})
+    .sort(function(a,b){return b.n-a.n||(a.t<b.t?-1:1)});
+}
+function prevEp(e){
+  var es=epsOf(e.workId).filter(function(x){return x.index<e.index});
+  return es.length?es[es.length-1]:null;
+}
+
+/* ---- 控え ---- */
+function vData(){
+  var h='<button class="back" data-act="back">‹ もどる</button>';
+  h+='<section><h2>控え</h2>';
+  h+='<div class="note">保存先：'+(store.label||"なし（この画面での変更は残りません）")+'<br>'+
+     '作品 '+S.works.length+'本 ／ 話 '+S.episodes.length+'本</div>';
+  h+='<button class="btn fill" data-act="export">JSONで書き出す</button>';
+  h+='<div class="hint">端末に保存できないときは、下の枠に出た文字を丸ごと写して控えてください。</div>';
+  h+='<label class="field"><span>読み書きする JSON</span><textarea id="io" placeholder="ここに控えたJSONを貼って、下のボタンを押します" style="min-height:150px;font-size:12px"></textarea></label>';
+  h+='<button class="btn danger" data-act="import">貼ったJSONで置き換える</button>';
+  h+='<div class="hint">いまの中身はすべて入れ替わります。先に書き出しておいてください。</div>';
+  h+='<div class="sep"></div>';
+  h+='<label class="field"><span>既定の投稿時刻</span><input type="time" value="'+(S.settings.time||"19:00")+'" data-s="time"></label>';
+  h+='<label class="field"><span>在庫の警告（日）</span><input type="number" inputmode="numeric" value="'+(S.settings.warnDays||3)+'" data-s="warnDays"></label>';
+  h+='</section>';
+  return h;
+}
+
+/* ============ 操作 ============ */
+function reindex(workId){
+  epsOf(workId).forEach(function(e,i){e.index=i+1});
+}
+function usedDates(exclude){
+  var m={};
+  S.episodes.forEach(function(e){
+    if(e.scheduledAt&&exclude.indexOf(e.id)<0)m[dpart(e.scheduledAt)]=1;
+  });
+  return m;
+}
+function assign(workId){
+  var startEl=document.getElementById("startDate"),timeEl=document.getElementById("startTime"),
+      modeEl=document.getElementById("assignMode");
+  var start=startEl&&startEl.value?startEl.value:today();
+  var time=timeEl&&timeEl.value?timeEl.value:(S.settings.time||"19:00");
+  var mode=modeEl?modeEl.value:"empty";
+  var es=epsOf(workId).filter(function(e){return mode==="all"?true:!e.scheduledAt});
+  if(!es.length){banner("振る話がありません。");return}
+  S.settings.time=time;
+  var ids=es.map(function(e){return e.id});
+  var used=usedDates(ids),d=start,n=0;
+  es.forEach(function(e){
+    var guard=0;
+    while(used[d]&&guard<400){d=shift(d,1);guard++}
+    e.scheduledAt=joinDT(d,time);
+    used[d]=1;d=shift(d,1);n++;
+  });
+  view.start=start;
+  save();render();
+  clearBanner();
+  banner(n+"本に日付を振りました（"+longDate(dpart(es[0].scheduledAt))+"から）。",false,"ok");
+}
+
+function addEpisode(workId){
+  var es=epsOf(workId),w=work(workId);
+  var n=es.length+1;
+  S.episodes.push({id:uid(),workId:workId,index:n,
+    title:(w?w.title:"")+"（"+n+"）",chars:0,isR18:false,checked:false,
+    caption:"",tags:es.length?(es[es.length-1].tags||[]).slice():[],scheduledAt:null,reserved:false});
+  save();render();
+}
+
+function parseTags(s){
+  return String(s||"").split(/[,、\n\r\t 　]+/).map(function(x){return x.trim()})
+    .filter(function(x){return x.length});
+}
+
+function swap(id,dir){
+  var t=today();
+  var arr=scheduled().filter(function(e){return dpart(e.scheduledAt)>=t});
+  var i=-1;arr.forEach(function(e,k){if(e.id===id)i=k});
+  var j=i+dir;
+  if(i<0||j<0||j>=arr.length)return;
+  var a=arr[i],b=arr[j],tmp=a.scheduledAt;
+  a.scheduledAt=b.scheduledAt;b.scheduledAt=tmp;
+  save();render();
+}
+
+function exportJSON(){
+  var text=JSON.stringify(S,null,2);
+  var io=document.getElementById("io");
+  if(io)io.value=text;
+  var name="日繰り-"+today()+".json";
+  if(window.claude&&typeof window.claude.use==="function"){
+    window.claude.use("downloads").then(function(d){
+      if(!d){banner("端末に保存できないので、下の枠に出しました。丸ごと写して控えてください。",false,"ok");return}
+      d.save({filename:name,data:text}).then(function(){
+        clearBanner();setStatus("書き出しました");
+      }).catch(function(e){
+        if(e&&e.code==="declined")return;
+        banner("書き出せませんでした（"+(e&&e.message||e)+"）。下の枠から写してください。");
+      });
+    });
+  }else{
+    banner("下の枠に出しました。丸ごと写して控えてください。",false,"ok");
+  }
+}
+function importJSON(){
+  var io=document.getElementById("io");
+  if(!io||!io.value.trim()){banner("枠にJSONを貼ってから押してください。");return}
+  var d;
+  try{d=JSON.parse(io.value)}
+  catch(e){banner("JSONとして読めませんでした（"+(e&&e.message||e)+"）。");return}
+  if(!d||!Array.isArray(d.works)||!Array.isArray(d.episodes)){
+    banner("作品と話の入っていないJSONです。読み込みませんでした。");return}
+  adopt(d);save();clearBanner();go({name:"dash"});
+}
+
+/* ============ 受け ============ */
+document.getElementById("tabs").addEventListener("click",function(ev){
+  var b=ev.target.closest("button[data-tab]");if(!b)return;
+  var t=b.getAttribute("data-tab");
+  go({name:t,workId:t==="split"?view.workId:null,epId:null});
+});
+
+document.addEventListener("click",function(ev){
+  var b=ev.target.closest("[data-act]");if(!b)return;
+  var act=b.getAttribute("data-act"),id=b.getAttribute("data-id");
+  if(act==="tab"){go({name:id,workId:null,epId:null});return}
+  if(act==="back"){go({name:view.name==="ep"?"sched":"dash"});return}
+  if(act==="data"){go({name:"data"});return}
+  if(act==="filter"){view.filter=id;render();return}
+  if(act==="work"){go({name:"work",workId:id});return}
+  if(act==="ep"){go({name:"ep",epId:id});return}
+  if(act==="split-go"){go({name:"split",workId:id||null});return}
+  if(act==="split-pick"){go({name:"split",workId:null});return}
+  if(act==="new-work"){
+    var w={id:uid(),title:"新しい作品",fandom:"原神／ファルカ×ローエン",totalChars:0,
+      status:"未検査",isBook:false,note:""};
+    S.works.unshift(w);save();go({name:"work",workId:w.id});return;
+  }
+  if(act==="del-work"){
+    var wk=work(id);if(!wk)return;
+    if(!window.confirm("「"+wk.title+"」と、その話をすべて消します。よろしいですか。"))return;
+    S.works=S.works.filter(function(x){return x.id!==id});
+    S.episodes=S.episodes.filter(function(x){return x.workId!==id});
+    save();go({name:"works"});return;
+  }
+  if(act==="add-ep"){addEpisode(id);return}
+  if(act==="renumber"){
+    var wk2=work(id);if(!wk2)return;
+    var es=epsOf(id);
+    es.forEach(function(e,i){
+      e.index=i+1;
+      e.title=wk2.title+(es.length===1?"":"（"+(i+1)+(i===es.length-1?"・完":"")+"）");
+    });
+    save();render();return;
+  }
+  if(act==="assign"){assign(id);return}
+  if(act==="tg-r18"){var e1=ep(id);if(e1){e1.isR18=!e1.isR18;save();render()}return}
+  if(act==="tg-check"){var e2=ep(id);if(e2){e2.checked=!e2.checked;save();render()}return}
+  if(act==="tg-res"){var e3=ep(id);if(e3){e3.reserved=!e3.reserved;save();render()}return}
+  if(act==="up"){swap(id,-1);return}
+  if(act==="down"){swap(id,1);return}
+  if(act==="del-ep"){
+    var e4=ep(id);if(!e4)return;
+    if(!window.confirm("「"+e4.title+"」を消します。よろしいですか。"))return;
+    var wid=e4.workId;
+    S.episodes=S.episodes.filter(function(x){return x.id!==id});
+    reindex(wid);save();go({name:"work",workId:wid});return;
+  }
+  if(act==="add-tag"){
+    var e5=ep(id),inp=document.getElementById("tagInput");if(!e5||!inp)return;
+    var add=parseTags(inp.value);if(!add.length)return;
+    e5.tags=(e5.tags||[]);
+    add.forEach(function(t){if(e5.tags.indexOf(t)<0)e5.tags.push(t)});
+    inp.value="";save();render();return;
+  }
+  if(act==="bank-tag"){
+    var e6=ep(id),t6=b.getAttribute("data-t");if(!e6)return;
+    e6.tags=(e6.tags||[]);
+    if(e6.tags.indexOf(t6)<0)e6.tags.push(t6);
+    save();render();return;
+  }
+  if(act==="del-tag"){
+    var e7=ep(id),i7=+b.getAttribute("data-i");if(!e7)return;
+    e7.tags=(e7.tags||[]);e7.tags.splice(i7,1);save();render();return;
+  }
+  if(act==="copy-tags"){
+    var e8=ep(id);if(!e8)return;var p8=prevEp(e8);
+    if(!p8||!(p8.tags||[]).length){banner("写せる前の話がありません。");return}
+    e8.tags=(p8.tags||[]).slice();save();render();clearBanner();return;
+  }
+  if(act==="copy-cap"){
+    var e9=ep(id);if(!e9)return;var p9=prevEp(e9);
+    if(!p9||!p9.caption){banner("写せる前の話のキャプションがありません。");return}
+    e9.caption=p9.caption;save();render();clearBanner();return;
+  }
+  if(act==="export"){exportJSON();return}
+  if(act==="import"){importJSON();return}
+});
+
+document.getElementById("app").addEventListener("change",function(ev){
+  var t=ev.target,v=t.value;
+  var wid=t.getAttribute("data-w"),eid=t.getAttribute("data-e"),sk=t.getAttribute("data-s"),
+      f=t.getAttribute("data-f");
+  if(sk){
+    if(sk==="warnDays")S.settings.warnDays=Math.max(1,+v||3);
+    else S.settings[sk]=v;
+    save();render();return;
+  }
+  if(wid){
+    var w=work(wid);if(!w)return;
+    if(f==="totalChars")w.totalChars=+v||0;
+    else if(f==="isBook")w.isBook=!!v;
+    else w[f]=v;
+    save();
+    if(f==="isBook"||f==="status"||f==="title")render();
+    return;
+  }
+  if(eid){
+    var e=ep(eid);if(!e)return;
+    if(f==="chars")e.chars=+v||0;
+    else if(f==="isR18")e.isR18=!!v;
+    else if(f==="date")e.scheduledAt=v?joinDT(v,tpart(e.scheduledAt)):null;
+    else if(f==="time"){if(e.scheduledAt)e.scheduledAt=joinDT(dpart(e.scheduledAt),v||"19:00")}
+    else e[f]=v;
+    save();
+    if(f==="date"||f==="time"||f==="isR18")render();
+    return;
+  }
+});
+
+/* ============ はじめ ============ */
+render();
+load();
+})();
+</script>
+
+</body>
+</html>
