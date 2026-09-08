@@ -184,6 +184,15 @@ h2 .n{font-family:var(--gothic);font-size:11.5px;letter-spacing:.02em;color:var(
 .tag b{font-weight:400;color:var(--dim);margin-left:5px}
 .tag.add{background:none;color:var(--dim);border-style:dashed}
 
+.cover{display:block;border:1px solid var(--rule);border-radius:2px;background:var(--paper2)}
+.cover.thumb{width:34px;height:48px;object-fit:cover;flex:none}
+.covrow{display:flex;gap:12px;align-items:flex-start}
+.cvset{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;padding:2px 0 6px}
+.cvbox{display:flex;flex-direction:column;gap:5px}
+.cvbox span{font-size:11px;color:var(--dim);letter-spacing:.04em}
+.cvframe{width:132px;aspect-ratio:600/848;overflow:hidden;border:1px solid var(--rule);background:var(--paper2)}
+.cvsq{width:74px;aspect-ratio:1/1;overflow:hidden;border:1px solid var(--rule);background:var(--paper2)}
+.cvframe img,.cvsq img{width:100%;height:100%;object-fit:cover;display:block}
 .tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper2);border-top:1px solid var(--rule);
   display:flex;padding-bottom:env(safe-area-inset-bottom);z-index:9}
 .tabs button{flex:1;padding:11px 2px 12px;font-size:12.5px;letter-spacing:.08em;color:var(--dim);
@@ -260,6 +269,34 @@ function scheduled(){return S.episodes.filter(function(e){return e.scheduledAt})
   .sort(function(a,b){return String(a.scheduledAt)<String(b.scheduledAt)?-1:1})}
 function isWriting(w){var n=STEP[w.stage];return n>=2&&n<=5}
 function isPlanning(w){var n=STEP[w.stage];return n===0||n===1}
+function splitFandom(w){
+  var t=String(w.fandom||""),au="";
+  var m=t.match(/[（(]([^）)]*)[）)]\s*$/);
+  if(m){au=m[1];t=t.slice(0,m.index)}
+  var parts=t.split(/[／\/]/);
+  w.genre=(parts[0]||"").trim();
+  w.cp=(parts.slice(1).join("／")||"").trim();
+  w.au=au.replace(/AU$/,"").trim();
+}
+function facetOf(w,k){return (w[k]||"").trim()}
+function facetCounts(k){
+  var m={};
+  S.works.forEach(function(w){
+    var v=facetOf(w,k)||"（未記入）";
+    if(!m[v])m[v]={n:0,done:0,writing:0};
+    m[v].n++;
+    if(w.stage==="完成")m[v].done++;
+    if(isWriting(w))m[v].writing++;
+  });
+  return Object.keys(m).map(function(v){return {v:v,n:m[v].n,done:m[v].done,writing:m[v].writing}})
+    .sort(function(a,b){return b.n-a.n||(a.v<b.v?-1:1)});
+}
+function fandomLine(w){
+  var a=[facetOf(w,"genre"),facetOf(w,"cp")].filter(function(x){return x});
+  var t=a.join("／");
+  if(facetOf(w,"au"))t+=(t?"　":"")+"〔"+facetOf(w,"au")+"〕";
+  return t||"未記入";
+}
 function isBook(w){return w.kind==="本"||w.kind==="両方"}
 function sampleState(w){
   if(w.sampleState==="公開ずみ")return {k:"ok",t:"サンプル公開ずみ"+(w.sampleAt?"（"+w.sampleAt.slice(5).replace("-","/")+"）":"")};
@@ -317,7 +354,7 @@ function nextEvent(){
 }
 
 /* ============ 保存 ============ */
-var store={kind:"none"},saveTimer=null,statusTimer=null;
+var store={kind:"none"},saveTimer=null,statusTimer=null,dbNs=null;
 function setStatus(t){var n=document.getElementById("st");if(n)n.textContent=t}
 function banner(msg,withHelp,tone){
   var n=document.getElementById("banner");if(!n)return;
@@ -338,6 +375,7 @@ function openStore(){
     if(window.claude&&typeof window.claude.use==="function"){
       return window.claude.use("db").then(function(db){
         if(!db)return;
+        dbNs=db;
         var ref=db.doc("novel-queue/data");
         store={kind:"db",label:"この道具の保存領域",
           read:function(){return ref.get().then(function(s){return s.exists?(s.data()||{}).json:null})},
@@ -376,7 +414,10 @@ function adopt(d){
   S.series=Array.isArray(d.series)?d.series:[];
   S.releases=Array.isArray(d.releases)?d.releases:[];
   S.settings=Object.assign({time:"19:00",warnDays:3,deadlineDays:21},d.settings||{});
-  S.episodes.forEach(function(e){if(e.pixivUrl==null)e.pixivUrl=""});
+  S.episodes.forEach(function(e){
+    if(e.pixivUrl==null)e.pixivUrl="";
+    if(e.hasCover==null)e.hasCover=false;
+  });
   S.v=2;
   /* 旧いかたちからの繰り越し */
   S.works.forEach(function(w){
@@ -394,6 +435,13 @@ function adopt(d){
     if(w.sampleAt==null)w.sampleAt="";
     if(w.sampleUrl==null)w.sampleUrl="";
     if(w.pixivUrl==null)w.pixivUrl="";
+    if(w.countedAt==null)w.countedAt="";
+    if(w.countedFrom==null)w.countedFrom="";
+    if(w.hasCover==null)w.hasCover=false;
+    if(w.genre==null&&w.cp==null&&w.au==null)splitFandom(w);
+    if(w.genre==null)w.genre="";
+    if(w.cp==null)w.cp="";
+    if(w.au==null)w.au="";
   });
 }
 function save(){
@@ -538,6 +586,168 @@ function sweep(list,line){
   step();
 }
 
+
+
+/* ============ 表紙 ============ */
+var covers={},coverBusy=false;
+function getDb(){
+  if(dbNs)return Promise.resolve(dbNs);
+  if(!(window.claude&&typeof window.claude.use==="function"))return Promise.resolve(null);
+  return window.claude.use("db").then(function(db){dbNs=db;return db});
+}
+function loadCover(id){
+  if(covers[id]!==undefined&&covers[id]!=="loading")return Promise.resolve(covers[id]);
+  covers[id]="loading";
+  return getDb().then(function(db){
+    if(!db){covers[id]=null;return null}
+    return db.doc("covers/"+id).get().then(function(sn){
+      covers[id]=sn.exists?((sn.data()||{}).img||null):null;return covers[id];
+    });
+  }).catch(function(){covers[id]=null;return null});
+}
+/* 見えている作品のぶんだけ、足りないものを読んで一度だけ描き直す */
+function ensureCovers(ids){
+  var need=ids.filter(function(i){return covers[i]===undefined});
+  if(!need.length||coverBusy)return;
+  coverBusy=true;
+  Promise.all(need.map(loadCover)).then(function(){coverBusy=false;render()})
+    .catch(function(){coverBusy=false});
+}
+function shrink(file,max,q){
+  return new Promise(function(res,rej){
+    var img=new Image(),url=URL.createObjectURL(file);
+    img.onload=function(){
+      var w=img.naturalWidth,h=img.naturalHeight,sc=Math.min(1,max/Math.max(w,h));
+      var c=document.createElement("canvas");
+      c.width=Math.max(1,Math.round(w*sc));c.height=Math.max(1,Math.round(h*sc));
+      c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      try{res(c.toDataURL("image/jpeg",q))}catch(e){rej({code:"img"})}
+    };
+    img.onerror=function(){URL.revokeObjectURL(url);rej({code:"img"})};
+    img.src=url;
+  });
+}
+/* 保存先が受け取れる大きさ（およそ180KB）まで落とす */
+function fitCover(file){
+  var steps=[[900,.82],[900,.68],[700,.65],[560,.6],[420,.55]];
+  function attempt(i){
+    if(i>=steps.length)return Promise.reject({code:"big"});
+    return shrink(file,steps[i][0],steps[i][1]).then(function(d){
+      return d.length<=185000?d:attempt(i+1);
+    });
+  }
+  return attempt(0);
+}
+function objOf(kind,id){return kind==="ep"?ep(id):work(id)}
+function saveCover(w,dataUrl){
+  return getDb().then(function(db){
+    if(!db)return Promise.reject({code:"nodb"});
+    return db.doc("covers/"+w.id).set({img:dataUrl,savedAt:new Date().toISOString()});
+  }).then(function(){
+    covers[w.id]=dataUrl;w.hasCover=true;if(w.stage!==undefined)touch(w);save();
+  });
+}
+function dropCover(w){
+  return getDb().then(function(db){
+    if(!db)return Promise.reject({code:"nodb"});
+    return db.doc("covers/"+w.id).delete();
+  }).then(function(){
+    covers[w.id]=null;w.hasCover=false;if(w.stage!==undefined)touch(w);save();
+  });
+}
+
+/* ============ 原稿を数える ============ */
+/* 見出し——朱入れの規則より狭く、章だけを拾う */
+var CHAP_RE=/^[\s　]*(?:第[〇零一二三四五六七八九十百千0-9０-９]+[章話節部幕回]|プロローグ|エピローグ|序章|終章|幕間|間奏)[\s　]*.{0,24}$/;
+/* RTF（Macのテキストエディットが吐く .txt はこれのことがある）をほどく */
+function unrtf(t){
+  if(!/^\s*\{\\rtf/.test(t))return t;
+  var s=t;
+  s=s.replace(/\{\\\*[\s\S]*?\}/g,"");              /* 表など、読まない群 */
+  s=s.replace(/\\u(-?\d+)\s?/g,function(m,n){
+    n=+n;if(n<0)n+=65536;return String.fromCharCode(n);});
+  s=s.replace(/(?:\\'[0-9a-fA-F]{2}){2}/g,"○");     /* 二バイト分は一字と数える */
+  s=s.replace(/\\'[0-9a-fA-F]{2}/g,"○");
+  s=s.replace(/\\par[d]?\b/g,"\n");
+  s=s.replace(/\\line\b/g,"\n");
+  s=s.replace(/\\[a-zA-Z]+-?\d*\s?/g,"");           /* 残りの制御語 */
+  s=s.replace(/[{}]/g,"");
+  return s;
+}
+function countText(t,name){
+  var body=unrtf(String(t||"")).replace(/\r\n?/g,"\n");
+  var bare=body.replace(/[\s　]/g,"");
+  var lines=body.split("\n"),chaps=0;
+  lines.forEach(function(l){if(CHAP_RE.test(l))chaps++});
+  return {chars:bare.length,raw:body.length,chaps:chaps,name:name||""};
+}
+
+/* .docx を読む（zipを直接ほどく・通信なし。朱入れと同じ実装） */
+async function inflateRaw(u8){
+  var st=new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(st).arrayBuffer());
+}
+async function readDocx(ab){
+  var dv=new DataView(ab),u8=new Uint8Array(ab),eocd=-1;
+  for(var i=u8.length-22;i>=0&&i>u8.length-66000;i--){if(dv.getUint32(i,true)===0x06054b50){eocd=i;break}}
+  if(eocd<0)throw {code:"docx",msg:"Wordのファイルとして読めません。"};
+  var n=dv.getUint16(eocd+10,true),p=dv.getUint32(eocd+16,true);
+  for(var k=0;k<n;k++){
+    var nameLen=dv.getUint16(p+28,true),extra=dv.getUint16(p+30,true),cmt=dv.getUint16(p+32,true);
+    var method=dv.getUint16(p+10,true),csize=dv.getUint32(p+20,true),lho=dv.getUint32(p+42,true);
+    var name=new TextDecoder().decode(u8.subarray(p+46,p+46+nameLen));
+    if(name==="word/document.xml"){
+      var ln=dv.getUint16(lho+26,true),le=dv.getUint16(lho+28,true);
+      var start=lho+30+ln+le,data=u8.subarray(start,start+csize);
+      var raw=method===0?data:await inflateRaw(data);
+      return new TextDecoder("utf-8").decode(raw);
+    }
+    p+=46+nameLen+extra+cmt;
+  }
+  throw {code:"docx",msg:"本文が見つかりません。"};
+}
+function docxToText(xml){
+  return xml.split("</w:p>").map(function(seg){
+    var t="",re=/<w:t[^>]*>([\s\S]*?)<\/w:t>|<w:br\s*\/?>|<w:tab\s*\/?>/g,m;
+    while((m=re.exec(seg))){t+=m[1]!==undefined?m[1]:(m[0].indexOf("tab")>0?"　":"\n")}
+    return t.replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"')
+            .replace(/&apos;/g,"'").replace(/&amp;/g,"&");
+  }).join("\n").replace(/\n{3,}/g,"\n\n").trim();
+}
+function b64bytes(b64){
+  var bin=atob(String(b64).replace(/\s/g,""));
+  var u8=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);
+  return u8;
+}
+
+function fileIdOf(w){
+  var m=String(w.driveUrl||"").match(/\/d\/([A-Za-z0-9_-]{10,})/);
+  return m?m[1]:(w.driveId||"");
+}
+function countFromDrive(w){
+  var id=fileIdOf(w);
+  if(!id)return Promise.reject({code:"no_file"});
+  return getMcp().then(function(m){
+    if(!m)return Promise.reject({code:"capability_disabled"});
+    return m.callTool("Google Drive","download_file_content",{fileId:id},{cache:{staleTime:30000}});
+  }).then(function(res){
+    var p=res&&res.payload;
+    if(typeof p==="string"){try{p=JSON.parse(p)}catch(e){p=null}}
+    if(!p||!p.content)return Promise.reject({code:"empty"});
+    var mt=String(p.mimeType||""),u8=b64bytes(p.content),nm=p.title||w.driveTitle;
+    if(/wordprocessingml\.document/.test(mt)||/\.docx$/i.test(nm)){
+      if(typeof DecompressionStream==="undefined")
+        return Promise.reject({code:"docx",msg:"この端末ではWordのファイルを開けません。"});
+      return readDocx(u8.buffer.slice(u8.byteOffset,u8.byteOffset+u8.byteLength))
+        .then(function(xml){return countText(docxToText(xml),nm)});
+    }
+    if(!/text\/|google-apps\.document/.test(mt))return Promise.reject({code:"kind",mime:mt});
+    return countText(new TextDecoder("utf-8").decode(u8),nm);
+  });
+}
+
 /* ============ 画面まわり ============ */
 function go(v){stack.push(JSON.parse(JSON.stringify(view)));view=v;render();window.scrollTo(0,0)}
 function jump(v){stack=[];view=v;render();window.scrollTo(0,0)}
@@ -568,6 +778,43 @@ function steps(w){
   var n=STEP[w.stage],h='<div class="steps'+(n<0?" hold":"")+'">';
   for(var i=0;i<6;i++)h+='<i class="'+(n===6?"done":(i<n?"on":""))+'"></i>';
   return h+'</div>';
+}
+
+function coverSection(obj,kind){
+  var h='<div class="sep"></div><section><h2>表紙</h2>';
+  var cv=covers[obj.id];
+  if(cv===undefined&&obj.hasCover){
+    loadCover(obj.id).then(function(){render()});
+  }
+  if(cv&&cv!=="loading"){
+    h+='<div class="cvset">'+
+      '<div class="cvbox"><span>pixivの表紙（600×848）</span>'+
+      '<div class="cvframe"><img alt="'+esc(obj.title)+'の表紙" src="'+esc(cv)+'"></div></div>'+
+      '<div class="cvbox"><span>一覧での見え方</span>'+
+      '<div class="cvsq"><img alt="" src="'+esc(cv)+'"></div>'+
+      '<div class="cvsq" style="width:44px"><img alt="" src="'+esc(cv)+'"></div></div>'+
+      '</div>';
+    h+='<div class="hint">枠からはみ出したところは切れます。縦横の比が違う画像は、真ん中を残して切られます。</div>';
+  }else if(cv==="loading"){h+='<div class="empty">表紙を読んでいます…</div>'}
+  else{h+='<div class="empty">表紙はまだありません。</div>'}
+  h+='<input type="file" id="coverFile" accept="image/*" style="display:none">';
+  h+='<div class="btns"><button class="btn" data-act="cover-pick" data-id="'+obj.id+'" data-k="'+kind+'">表紙を選ぶ</button>'+
+     (obj.hasCover?'<button class="btn quiet" data-act="cover-drop" data-id="'+obj.id+'" data-k="'+kind+'">外す</button>':"")+'</div>';
+  h+='<div class="hint">pixivの表紙は縦600×848が目安です。長辺900pxほどに縮めて持ちます。'+
+     '台帳とは別に置くので、控えのJSONには入りません。</div>';
+  if(view.coverErr)h+='<div class="hint shu">'+esc(view.coverErr)+'</div>';
+  return h+'</section>';
+}
+function datalists(){
+  var h="";
+  [["dlGenre","genre"],["dlCp","cp"],["dlAu","au"]].forEach(function(pair){
+    h+='<datalist id="'+pair[0]+'">';
+    facetCounts(pair[1]).forEach(function(f){
+      if(f.v!=="（未記入）")h+='<option value="'+esc(f.v)+'"></option>';
+    });
+    h+='</datalist>';
+  });
+  return h;
 }
 function stageName(w){
   var n=STEP[w.stage];
@@ -691,7 +938,12 @@ function vWorks(){
     h+='<button class="chip'+(f===k?" on":"")+'" data-act="filter" data-id="'+k+'">'+k+'</button>';
   });
   h+='</div>';
+  h+='<div class="pair" style="gap:8px">'+
+     facetSelect("genre","ジャンル")+facetSelect("cp","CP")+facetSelect("au","AU")+'</div>';
   var list=S.works.filter(function(w){
+    if(filt.genre&&facetOf(w,"genre")!==filt.genre)return false;
+    if(filt.cp&&facetOf(w,"cp")!==filt.cp)return false;
+    if(filt.au&&facetOf(w,"au")!==filt.au)return false;
     return f==="すべて"?true:
       f==="書きかけ"?isWriting(w):
       f==="未記入"?w.stage==="未記入":
@@ -708,9 +960,13 @@ function vWorks(){
   h+='<div class="note" style="padding:0 0 6px">'+list.length+'本</div>';
   list.forEach(function(w){
     var es=epsOf(w.id),sr=w.seriesId?series(w.seriesId):null,rl=w.releaseId?release(w.releaseId):null;
+    var cvs=covers[w.id];
     h+='<button class="work" data-act="work" data-id="'+w.id+'">'+
+      '<div class="covrow">'+
+      (cvs&&cvs!=="loading"?'<img class="cover thumb" alt="" src="'+esc(cvs)+'">':"")+
+      '<div style="flex:1;min-width:0">'+
       '<div class="wt">'+esc(w.title)+'</div>'+
-      '<div class="wm">'+esc(w.fandom||"ジャンル未記入")+(sr?'　／　'+esc(sr.title):"")+'</div>'+
+      '<div class="wm">'+esc(fandomLine(w))+(sr?'　／　'+esc(sr.title):"")+'</div>'+
       steps(w)+
       '<div class="wf">'+stageName(w)+
         '<span class="pill">'+kindLabel(w.kind)+'</span>'+
@@ -726,12 +982,39 @@ function vWorks(){
         (w.updatedAt?'<span>'+diffDays(w.updatedAt,today())+'日前</span>':"")+
       '</div>'+
       (w.kind==="本"?'<div class="book">同人誌にする ─ pixivには出さない</div>':"")+
-      '</button>';
+      '</div></div></button>';
   });
+  ensureCovers(list.filter(function(w){return w.hasCover}).slice(0,24).map(function(w){return w.id}));
   h+='<button class="btn" data-act="new-work">作品を足す</button>';
+  h+='<div class="sep"></div>';
+  [["genre","ジャンル"],["cp","CP"],["au","AU・パロ"]].forEach(function(pair){
+    var fc=facetCounts(pair[0]);
+    if(!fc.length)return;
+    h+='<section><h2>'+pair[1]+'の内訳<span class="n">'+fc.length+'種</span></h2>';
+    fc.forEach(function(x){
+      var on=filt[pair[0]]===(x.v==="（未記入）"?"":x.v);
+      h+='<button class="row" data-act="facet" data-k="'+pair[0]+'" data-v="'+esc(x.v==="（未記入）"?"":x.v)+'">'+
+        '<span class="body"><span class="t">'+esc(x.v)+(on?'　<span class="pill ai">絞り込み中</span>':"")+'</span>'+
+        '<span class="m"><span class="tabular">'+x.n+'本</span>'+
+        (x.done?'<span class="pill md">完成 '+x.done+'</span>':"")+
+        (x.writing?'<span class="pill ai">書きかけ '+x.writing+'</span>':"")+
+        '</span></span><span class="go">›</span></button>';
+    });
+    h+='</section>';
+  });
   h+='<div class="sep"></div><div class="note">この台帳は、手元のスキルの正本（刊行計画・表現バンクの記帳・各シリーズ正典）から起こした下書きです。'+
      '字数・章数・段階は拾えたぶんだけ入れてあります。違うところは直してください。</div>';
   return h;
+}
+function facetSelect(k,label){
+  var h='<label class="field half" style="padding:0 0 10px"><span>'+label+'</span>'+
+        '<select data-fq="'+k+'"><option value="">すべて</option>';
+  facetCounts(k).forEach(function(f){
+    var v=f.v==="（未記入）"?"":f.v;
+    if(f.v==="（未記入）")return;
+    h+='<option value="'+esc(v)+'"'+(filt[k]===v?" selected":"")+'>'+esc(f.v)+' '+f.n+'</option>';
+  });
+  return h+'</select></label>';
 }
 function order(w){
   var n=STEP[w.stage];
@@ -745,7 +1028,12 @@ function vWork(){
   var es=epsOf(w.id),h="";
   h+='<button class="back" data-act="back">‹ もどる</button>';
   h+='<label class="field"><span>題</span><input value="'+esc(w.title)+'" data-w="'+w.id+'" data-f="title"></label>';
-  h+='<label class="field"><span>ジャンル・CP</span><input value="'+esc(w.fandom)+'" data-w="'+w.id+'" data-f="fandom"></label>';
+  h+='<div class="pair">'+
+     '<label class="field half"><span>ジャンル</span><input list="dlGenre" value="'+esc(w.genre)+'" data-w="'+w.id+'" data-f="genre" placeholder="原神"></label>'+
+     '<label class="field half"><span>CP</span><input list="dlCp" value="'+esc(w.cp)+'" data-w="'+w.id+'" data-f="cp" placeholder="ファルカ×ローエン"></label></div>';
+  h+='<label class="field"><span>AU・パロ</span><input list="dlAu" value="'+esc(w.au)+'" data-w="'+w.id+'" data-f="au" placeholder="オメガバース／狼男×吸血鬼／アイドル など"></label>';
+  h+=datalists();
+  h+='<div class="hint">同じ言葉を選べるように、これまでに使った値が候補に出ます。表記を揃えておくと、あとで一覧が効きます。</div>';
 
   h+='<section><h2>進み具合</h2>';
   h+='<div class="stepper">';
@@ -767,6 +1055,19 @@ function vWork(){
      '</div>';
   if(w.charsTarget)h+='<div class="bar"><span style="width:'+
      Math.min(100,Math.round((w.charsNow||0)/w.charsTarget*100))+'%"></span></div>';
+  h+='<div class="btns">'+
+     '<button class="btn" data-act="count-drive" data-id="'+w.id+'">原稿から数える（ドライブ）</button>'+
+     '<button class="btn quiet" data-act="count-file" data-id="'+w.id+'">ファイルを選ぶ</button></div>';
+  h+='<input type="file" id="countFile" accept=".docx,.txt,.md,.rtf" style="display:none">';
+  if(view.count){
+    var c=view.count;
+    h+='<div class="banner ok" style="margin-top:12px">'+esc(c.name||"読みました")+'<br>'+
+       '<b class="tabular">'+num(c.chars)+'</b>字（空白と改行を除く）　'+
+       'そのままだと '+num(c.raw)+' 字　見出し '+c.chaps+' 本</div>';
+    h+='<button class="btn fill" data-act="count-apply" data-id="'+w.id+'">この数を入れる</button>';
+  }
+  if(view.countErr)h+='<div class="hint shu">'+esc(view.countErr)+'</div>';
+  if(w.countedAt)h+='<div class="hint">'+esc(w.countedAt)+' に'+esc(w.countedFrom||"原稿")+'から数えました。</div>';
   h+='<button class="btn" data-act="touch" data-id="'+w.id+'">今日これを進めた</button>';
   h+='<div class="hint">最終更新：'+(w.updatedAt?longDate(w.updatedAt)+"（"+diffDays(w.updatedAt,today())+"日前）":"—")+'</div>';
   h+='</section>';
@@ -800,6 +1101,7 @@ function vWork(){
     h+='<div class="hint">R-18は画像の構図に制約があります。本文サンプルを画像にするときは、性描写の直前ではなく場面の切れ目で切る（book-promotion）。サンプル公開は旗艦ポストを再掲するきっかけにもなります。</div>';
     h+='</section>';
   }
+  h+=coverSection(w,"work");
   h+='<div class="sep"></div><section><h2>原稿の置き場</h2>';
   var bs=backupState(w);
   h+='<div class="wf" style="margin:0 0 8px"><span class="pill'+(bs.k==="ok"?" md":bs.k==="old"?" shu":"")+'">'+bs.t+'</span>'+
@@ -984,8 +1286,11 @@ function vRelease(){
 
   h+='<section><h2>載せる本<span class="n">'+ws.length+'冊</span></h2>';
   if(!ws.length)h+='<div class="empty">まだ入っていません。</div>';
+  ensureCovers(ws.filter(function(w){return w.hasCover}).map(function(w){return w.id}));
   ws.forEach(function(w){
+    var cw=covers[w.id];
     h+='<button class="row" data-act="work" data-id="'+w.id+'">'+
+      (cw&&cw!=="loading"?'<img class="cover thumb" alt="" src="'+esc(cw)+'">':"")+
       '<span class="body"><span class="t">'+esc(w.title)+'</span>'+steps(w)+'<span class="m">'+
       stageName(w)+(w.chaptersTotal?'<span>'+(w.chaptersDone||0)+'/'+w.chaptersTotal+'章</span>':"")+
       (w.charsNow?'<span>'+num(w.charsNow)+'字</span>':"")+
@@ -1047,6 +1352,7 @@ function vSched(){
   var undated=S.episodes.filter(function(e){return !e.scheduledAt});
   var s=stats();
   h+='<div class="note" style="padding:4px 0 12px">予約ずみ '+s.days+'日ぶん　／　仕込み待ち '+s.waiting+'本</div>';
+  ensureCovers(future.filter(function(e){return e.hasCover}).slice(0,20).map(function(e){return e.id}));
   h+='<section><h2>これから<span class="n">'+future.length+'本</span></h2>';
   if(!future.length)h+='<div class="empty">日付の入った話がありません。</div>';
   future.forEach(function(e,i){h+=schedRow(e,i,future)});
@@ -1081,6 +1387,8 @@ function vSched(){
 function schedRow(e,i,arr){
   var d=dpart(e.scheduledAt),t=today();
   var h='<div class="row'+(d===t?" today":"")+'" style="align-items:stretch">';
+  var cve=covers[e.id];
+  if(cve&&cve!=="loading")h+='<img class="cover thumb" alt="" src="'+esc(cve)+'">';
   h+='<button class="d" style="text-align:left;padding-top:2px" data-act="ep" data-id="'+e.id+'">'+
      '<b>'+md(d)+'</b> '+wdOf(d)+'<br><span style="font-size:11px">'+tpart(e.scheduledAt)+'</span></button>';
   h+='<button class="body" style="text-align:left" data-act="ep" data-id="'+e.id+'">'+
@@ -1119,6 +1427,7 @@ function vEp(){
      '<button class="btn'+(e.checked?" fill":"")+'" style="margin-top:6px" data-act="tg-check" data-id="'+e.id+'">'+(e.checked?"検査済":"未検査")+'</button>'+
      '<button class="btn'+(e.reserved?" fill":"")+'" style="margin-top:6px" data-act="tg-res" data-id="'+e.id+'">'+(e.reserved?"予約ずみ":"未予約")+'</button></div>';
   h+='<div class="hint">左は文体検査と目視、右はpixivの予約に入れ終えたかどうかです。</div>';
+  h+=coverSection(e,"ep");
   if(e.pixivUrl)h+='<a class="link" href="'+esc(e.pixivUrl)+'" target="_blank" rel="noopener">pixivで開く</a>';
   h+='<label class="field"><span>pixivのURL（この話）</span><input value="'+esc(e.pixivUrl)+'" data-e="'+e.id+'" data-f="pixivUrl" placeholder="https://www.pixiv.net/novel/show.php?id=..."></label>';
   h+='<div class="hint">出したあとに貼っておくと、あとで引くときに探さずに済みます。</div>';
@@ -1227,7 +1536,7 @@ function addEpisode(workId){
   var es=epsOf(workId),w=work(workId),n=es.length+1;
   S.episodes.push({id:uid(),workId:workId,index:n,title:(w?w.title:"")+"（"+n+"）",chars:0,
     isR18:false,checked:false,caption:"",tags:es.length?(es[es.length-1].tags||[]).slice():[],
-    scheduledAt:null,reserved:false,pixivUrl:""});
+    scheduledAt:null,reserved:false,pixivUrl:"",hasCover:false});
   save();render();
 }
 function parseTags(s){
@@ -1296,6 +1605,82 @@ document.addEventListener("click",function(ev){
     if(!wb||!f)return;
     bindDrive(wb,f);view.hits=null;save();render();return;
   }
+  if(act==="cover-pick"){
+    var wcv=objOf(b.getAttribute("data-k"),id),ci=document.getElementById("coverFile");
+    if(!wcv||!ci)return;
+    ci.onchange=function(){
+      var f=ci.files&&ci.files[0];if(!f)return;
+      view.coverErr="";banner("表紙を取り込んでいます…",false,"ok");
+      fitCover(f).then(function(d){return saveCover(wcv,d)}).then(function(){
+        clearBanner();render();
+      }).catch(function(e){
+        view.coverErr=e&&e.code==="big"?"この画像は大きすぎて入りません。小さくしてから選んでください。":
+          e&&e.code==="nodb"?"保存先につながっていないので、表紙を置けません。":
+          e&&e.code==="img"?"画像として読めませんでした。":
+          "表紙を置けませんでした（"+((e&&e.message)||(e&&e.code)||"")+"）。";
+        clearBanner();render();
+      });
+    };
+    ci.click();return;
+  }
+  if(act==="cover-drop"){
+    var wcd=objOf(b.getAttribute("data-k"),id);if(!wcd)return;
+    if(!window.confirm("表紙を外します。よろしいですか。"))return;
+    dropCover(wcd).then(function(){render()}).catch(function(e){
+      view.coverErr="外せませんでした。";render();
+    });
+    return;
+  }
+  if(act==="count-drive"){
+    var wc=work(id);if(!wc)return;
+    view.count=null;view.countErr="";
+    if(!fileIdOf(wc)){view.countErr="先に「原稿の置き場」でドライブの原稿を結びつけてください。";render();return}
+    banner("原稿を読んでいます…",false,"ok");
+    countFromDrive(wc).then(function(c){
+      view.count=c;view.countErr="";clearBanner();render();
+    }).catch(function(e){
+      view.count=null;
+      view.countErr=e&&e.code==="docx"?(e.msg||"Wordのファイルを読めませんでした。"):
+        e&&e.code==="kind"?"このかたちのファイルは数えられません（"+esc(e.mime||"")+"）。テキストかGoogleドキュメントにしてください。":
+        e&&e.code==="empty"?"中身が取れませんでした。":
+        e&&e.code==="no_file"?"ドライブの原稿が結びついていません。":mcpFix(e&&e.code);
+      clearBanner();render();
+    });
+    return;
+  }
+  if(act==="count-file"){
+    var wf2=work(id),inp2=document.getElementById("countFile");
+    if(!wf2||!inp2)return;
+    inp2.onchange=function(){
+      var f=inp2.files&&inp2.files[0];if(!f)return;
+      var rd=new FileReader();
+      rd.onerror=function(){view.countErr="ファイルを読めませんでした。";render()};
+      if(/\.docx$/i.test(f.name)){
+        if(typeof DecompressionStream==="undefined"){
+          view.countErr="この端末ではWordのファイルを開けません。テキストで書き出してください。";render();return;
+        }
+        rd.onload=function(){
+          readDocx(rd.result).then(function(xml){
+            view.count=countText(docxToText(xml),f.name);view.countErr="";render();
+          }).catch(function(e){view.countErr=(e&&e.msg)||"Wordのファイルを読めませんでした。";render()});
+        };
+        rd.readAsArrayBuffer(f);
+      }else{
+        rd.onload=function(){view.count=countText(rd.result,f.name);view.countErr="";render()};
+        rd.readAsText(f);
+      }
+    };
+    inp2.click();return;
+  }
+  if(act==="count-apply"){
+    var wa=work(id),c2=view.count;if(!wa||!c2)return;
+    wa.charsNow=c2.chars;
+    if(c2.chaps)wa.chaptersTotal=c2.chaps;
+    wa.countedAt=today();wa.countedFrom=c2.name||"原稿";
+    touch(wa);view.count=null;save();render();
+    banner("字数と章を入れました。書けた章は手で入れてください。",false,"ok");
+    return;
+  }
   if(act==="sample"){
     var wsm=work(id),k=b.getAttribute("data-s");if(!wsm)return;
     if(wsm.sampleState===k){wsm.sampleState="";if(k==="公開ずみ")wsm.sampleAt=""}
@@ -1315,6 +1700,10 @@ document.addEventListener("click",function(ev){
     return;
   }
   if(act==="filter"){filt.works=id;render();return}
+  if(act==="facet"){
+    var fk=b.getAttribute("data-k"),fv=b.getAttribute("data-v");
+    filt[fk]=filt[fk]===fv?"":fv;render();window.scrollTo(0,0);return;
+  }
   if(act==="work"){go({name:"work",workId:id});return}
   if(act==="ep"){go({name:"ep",epId:id});return}
   if(act==="split"){go({name:"split",workId:id||null});return}
@@ -1333,7 +1722,7 @@ document.addEventListener("click",function(ev){
   }
   if(act==="touch"){var w2=work(id);if(w2){touch(w2);save();render()}return}
   if(act==="new-work"){
-    var w3={id:uid(),title:"新しい作品",fandom:"",kind:"未定",stage:"構想",chaptersDone:0,
+    var w3={id:uid(),title:"新しい作品",fandom:"",genre:"",cp:"",au:"",kind:"未定",stage:"構想",chaptersDone:0,
       chaptersTotal:0,charsNow:0,charsTarget:0,seriesId:"",releaseId:"",note:"",updatedAt:today(),
       driveUrl:"",driveTitle:"",driveModified:"",driveQuery:"",driveState:"",driveCheckedAt:"",driveHits:0,
       sampleState:"",sampleAt:"",sampleUrl:"",pixivUrl:""};
@@ -1423,7 +1812,8 @@ document.addEventListener("click",function(ev){
 document.getElementById("app").addEventListener("change",function(ev){
   var t=ev.target,v=t.value,f=t.getAttribute("data-f");
   var wid=t.getAttribute("data-w"),eid=t.getAttribute("data-e"),rid=t.getAttribute("data-r"),
-      yid=t.getAttribute("data-y"),sk=t.getAttribute("data-s");
+      yid=t.getAttribute("data-y"),sk=t.getAttribute("data-s"),fq=t.getAttribute("data-fq");
+  if(fq){filt[fq]=v;render();return}
   if(sk){
     if(sk==="warnDays")S.settings.warnDays=Math.max(1,+v||3);
     else if(sk==="deadlineDays")S.settings.deadlineDays=Math.max(1,+v||21);
@@ -1435,7 +1825,7 @@ document.getElementById("app").addEventListener("change",function(ev){
     if(f==="chaptersDone"||f==="chaptersTotal"||f==="charsNow"||f==="charsTarget")w[f]=+v||0;
     else w[f]=v;
     touch(w);save();
-    if(f!=="note"&&f!=="fandom"&&f!=="driveUrl"&&f!=="driveTitle"&&f!=="pixivUrl"&&f!=="sampleUrl")render();
+    if(f!=="note"&&f!=="driveUrl"&&f!=="driveTitle"&&f!=="pixivUrl"&&f!=="sampleUrl")render();
     return;
   }
   if(rid){
