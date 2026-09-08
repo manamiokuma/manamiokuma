@@ -341,6 +341,67 @@ run("控えと書き出しに案が載る", () => {
 });
 ev(`cur = null; curId = null`);
 
+console.log("\n差分回収と、自分の直しから作る鉛筆");
+const 型 = (a, b) => ev(`diffMoves(${JSON.stringify(a)}, ${JSON.stringify(b)})`).map(m => m.k + (m.a ? "「" + m.a + "」" : "") + (m.b ? "→「" + m.b + "」" : "")).join(" ");
+run("削った語を切り出す", () => eq(型("　彼は静かに窓を閉めた。", "　窓を閉めた。"), "del「彼は静かに」"));
+run("言い換えと語尾の直しを分ける", () => eq(型("　その事について、彼は何も言わなかったのだった。", "　そのことについて、彼は何も言わなかった。"), "sub「事」→「こと」 tail「のだった」"));
+run("語尾の直しは、語尾の形のまま切り出す", () => eq(型("　もう戻れないと思った。", "　もう戻れないと思う。"), "tail「った」→「う」"));
+run("読点の増減は本人の領分として分ける", () => eq(型("　手紙の端を、指でなぞった。", "　手紙の端を指でなぞった。"), "punct「、」"));
+run("長い書き直しは規則にしない", () => {
+  const m = ev(`diffMoves("　光が差し、鳥が鳴き、朝が来て、風が吹いて、それから彼は立ち上がった。", "　彼は立ち上がった。")`);
+  truthy(m.some(x => x.k === "rewrite"), "十二字を超える直しが規則候補に混じる: " + JSON.stringify(m));
+});
+run("同じ直しを二回すると規則候補になり、一回なら参考に落ちる", () => {
+  ev(`__h = {v:2, id:"h", title:"t", blocks: cutBlocks("　あ。", 2200), pass:1, kind:"typo", history:[], log:[
+    {p:1,k:"typo",b:0,i:0,o:"　彼は静かに窓を閉めた。", n:"　窓を閉めた。", at:1},
+    {p:1,k:"typo",b:0,i:1,o:"　彼は静かに扉を押した。", n:"　扉を押した。", at:2},
+    {p:1,k:"typo",b:0,i:2,o:"　まるで夢のように静かだった。", n:"　静かだった。", at:3}
+  ]}; migrate(__h); cur = __h; curId = "h"; index = []`);
+  const h = ev("harvest()");
+  eq(h.n.fix, 3);
+  const cand = ev("harvestRows(harvest(), 2)");
+  eq(cand.length, 1, "規則候補の数");
+  eq(cand[0].k, "彼は静かに"); eq(cand[0].n, 2);
+  truthy(ev("harvestText()").indexOf("削った　彼は静かに　2回") >= 0, "回収の書き出しに載らない");
+});
+run("規則候補から鉛筆ができて、残っている行に引かれる", () => {
+  ev("buildMine()");
+  eq(ev("mineCache.length"), 1, "鉛筆の本数");
+  ev(`__b = {t:"　彼は静かに息を吐いた。\\n　風が吹いた。", done:false, note:"", marks:[], fusen:[], edits:{}, advice:{}, fmemo:{}, ftags:{}, wide:{on:false,memo:"",tags:[]}}`);
+  const r = ev(`readBlock(__b, ["buntai"])`);        /* 通しの種類にかかわらず出る */
+  truthy(r[0] && r[0].some(x => x.id.indexOf("mine:") === 0), "残っている行に鉛筆が引かれない: " + JSON.stringify(r));
+  truthy(!r[2], "形のない行にまで引いている");
+  truthy(r[0][0].msg.indexOf("よく削る") >= 0, "言葉が違う: " + r[0][0].msg);
+});
+run("語尾の鉛筆は、語尾にだけ引く", () => {
+  ev(`cur.log = [
+    {p:1,k:"typo",b:0,i:0,o:"　鳥が鳴いた。", n:"　鳥が鳴く。", at:1},
+    {p:1,k:"typo",b:0,i:1,o:"　靴を履いた。", n:"　靴を履く。", at:2}
+  ]; buildMine()`);
+  eq(ev("mineCache.length"), 1);
+  eq(ev("mineCache[0].kind"), "tail");
+  ev(`__b2 = {t:"　塔は町の外れに立っていた。\\n　いたずらに時が過ぎる。", done:false, note:"", marks:[], fusen:[], edits:{}, advice:{}, fmemo:{}, ftags:{}, wide:{on:false,memo:"",tags:[]}}`);
+  const r = ev(`readBlock(__b2, null)`);
+  truthy(r[0] && r[0].some(x => x.id.indexOf("mine:") === 0), "語尾に引かれない");
+  truthy(!(r[2] && r[2].some(x => x.id.indexOf("mine:") === 0)), "文頭の「いた」にまで引いている");
+});
+run("語尾を丸ごと削ったときも、鍵と鉛筆が壊れない", () => {
+  ev(`cur.log = [
+    {p:1,k:"typo",b:0,i:0,o:"　廊下は暗かったのだった。", n:"　廊下は暗かった。", at:1},
+    {p:1,k:"typo",b:0,i:1,o:"　何も言わなかったのだった。", n:"　何も言わなかった。", at:2}
+  ]; buildMine()`);
+  const cand = ev("harvestRows(harvest(), 2)");
+  eq(cand.length, 1); eq(cand[0].k, "のだった", "言い換え先がないのに → が付いている: " + cand[0].k);
+  eq(ev("mineCache.length"), 1);
+  truthy(ev("mineCache[0].name").indexOf("語尾をよく削る「のだった」") === 0, "言葉が違う: " + ev("mineCache[0].name"));
+  truthy(ev("harvestText()").indexOf("undefined") < 0, "書き出しに undefined が混じる");
+});
+run("設定で止められる", () => {
+  ev("conf.mine = false; buildMine()");
+  eq(ev("mineCache.length"), 0);
+  ev("conf.mine = true; buildMine(); cur = null; curId = null");
+});
+
 console.log("\n締め切りと見通し");
 const 日 = n => { const d = new Date(); d.setDate(d.getDate() - n);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };

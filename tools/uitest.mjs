@@ -442,6 +442,46 @@ await step("案を押すと直しの欄に入る", async () => {
   must(t === "窓の外は白く煙っていた。", "案が本文に入らない: " + t);
   await p.click("#r-back");
 });
+await step("同じ直しを二回すると、次から先回りの鉛筆が引かれる", async () => {
+  await p.click("#btn-go");                                   /* 全部読み終えているので一区切り目から */
+  for (const [n, to] of [[9, "鳥が鳴く。"], [10, "彼は靴を履く。"]]) {
+    await p.locator(".ln-t").nth(n).click();
+    await p.fill("#sh-t", to);
+    await p.click("#sh-save");
+    await p.waitForTimeout(150);
+  }
+  await p.click("#r-back");
+  await p.locator("#w-sheet .cell").nth(1).click();          /* 二区切り目：「立っていた」「知っていた」で終わる */
+  const msgs = await p.locator(".pen-msg").allTextContents();
+  must(msgs.some(m => m.includes("語尾をよく直す")), "先回りの鉛筆が引かれない: " + msgs.join(" | "));
+  await p.click("#r-back");
+});
+await step("傾向表の頭に、自分の直しの傾向が出る", async () => {
+  await p.click("#btn-report");
+  const t = await p.textContent("#rp-body");
+  must(t.includes("直しの傾向"), "直しの傾向が出ない");
+  must(t.includes("いた → く"), "規則候補が出ない: " + t.slice(0, 200));
+  must(t.includes("本の鉛筆"), "鉛筆の本数が出ない");
+  await p.click("#rp-back");
+});
+await step("直しの回収と、差分回収に渡す二本を書き出せる", async () => {
+  await p.click("#btn-out");
+  const dl = p.waitForEvent("download");
+  await p.click("#o-harvest");
+  const d = await dl;
+  must(d.suggestedFilename().includes("直しの回収"), "名前が違う: " + d.suggestedFilename());
+  const st = await d.createReadStream();
+  let body = ""; for await (const c of st) body += c;
+  must(body.includes("【規則候補】") && body.includes("いた → く　2回"), "回収の中身が違う");
+  const names = [];
+  const 拾う = dd => names.push(dd.suggestedFilename());
+  p.on("download", 拾う);
+  await p.click("#o-pair");
+  await p.waitForTimeout(1200);
+  p.off("download", 拾う);
+  must(names.includes("人形の部屋_もと.txt") && names.includes("人形の部屋_直し.txt"), "二本そろわない: " + names.join(","));
+  await p.click("#o-back");
+});
 await step("控えの付箋に案あり印が付く", async () => {
   await p.click("#btn-notes");
   await p.locator('#n-filter button[data-f="fusen"]').click();

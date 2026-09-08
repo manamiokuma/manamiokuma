@@ -350,7 +350,10 @@
     <button class="go quiet" id="o-note-txt" style="margin-top:9px">控え（テキスト）</button>
     <p class="hint" style="margin:7px 0 16px">直した箇所を「もとの文 → 直した文」で並べます。何をしたかの台帳。</p>
     <button class="go quiet" id="o-orig">もとの本文（テキスト）</button>
-    <p class="hint" style="margin:7px 0 0">読み込んだときのまま。取り違えたときの控えに。</p>
+    <p class="hint" style="margin:7px 0 16px">読み込んだときのまま。取り違えたときの控えに。</p>
+    <button class="go quiet" id="o-harvest">直しの回収（テキスト）</button>
+    <button class="go quiet" id="o-pair" style="margin-top:9px">差分回収に渡す二本（もと／直し）</button>
+    <p class="hint" style="margin:7px 0 0">「直しの回収」は、何を削り何に言い換えたかの集計。「二本」は manuscript-qa の差分回収にそのまま渡せる、もとの本文と直した本文の対です。</p>
   </section>
 
   <!-- 追加 -->
@@ -408,6 +411,8 @@
     <p class="cat-h">きょうの分</p>
     <div class="field" style="margin-top:8px"><label for="c-quota">一日にこれだけ読めたら上出来、という区切り数</label><input id="c-quota" type="number" inputmode="numeric"></div>
     <p class="hint" style="margin:0 0 4px">少なめに決めておくのがこつです。三区切りでおよそ三十分。締め切りを決めた原稿があるときは、そちらから逆算した数が優先されます。</p>
+    <p class="cat-h">自分の直しから作る鉛筆</p>
+    <button class="sw" id="c-mine"><i></i><div><b>同じ直しを二回したら、次から先回りする</b><span>行を直した記録から「よく削る語」「よく言い換える語」を拾い、その形が残っている行に鉛筆を引きます。通しの種類にかかわらず出ます</span></div></button>
     <p class="cat-h">下読み</p>
     <p class="lead">機械が先に読んで、あやしい行に<u>鉛筆</u>を引きます。朱は人が入れるもの、鉛筆は機械が引くもの。うるさい項目は消してください。消しても本文は変わりません。</p>
     <div id="c-list"></div>
@@ -651,13 +656,13 @@ const RULES=[
    f:s=>{ const n=(s.match(/[こそあ]の|[こそあ]れ/g)||[]).length; return n>=3?"指す言葉が"+n+"つ":null; }}
 ];
 const RULE=id=>RULES.find(r=>r.id===id);
-const CATNAME={hyoki:"誤字と表記",buntai:"文体とリズム",seigou:"つじつま"};
+const CATNAME={hyoki:"誤字と表記",buntai:"文体とリズム",seigou:"つじつま",mine:"自分の直しから"};
 
 /* 一区切りぶんの下読み。{k:[{id,msg}]} を返す */
 function readBlock(b, cats){
   const ls=lines(b.t), res={};
   const use=r=>conf.rules[r.id]!==false && (!cats||!cats.length||cats.indexOf(r.cat)>=0);
-  const on=RULES.filter(r=>!r.para&&use(r)), onP=RULES.filter(r=>r.para&&use(r));
+  const on=RULES.filter(r=>!r.para&&use(r)).concat(mineCache), onP=RULES.filter(r=>r.para&&use(r));
   if(!on.length&&!onP.length) return res;
   const add=(k,id,msg)=>{ (res[k]=res[k]||[]).push({id:id,msg:msg}); };
   let head=true, prev=null, tw=null, tn=0, pTop=-1, pText="";
@@ -788,7 +793,7 @@ function openWork(id,go){
   curId=id; cur=jget("shuire:work:"+id);
   if(!cur){ toast("本文が見つかりません"); return; }
   migrate(cur);
-  yure=buildYure(cur);
+  yure=buildYure(cur); buildMine();
   penCache=readWork(cur, kindOf(cur.kind).cats);
   if(conf.last!==id){ conf.last=id; jset(K_CONF,conf); }
   if(go){ const f=firstUndone(); openBlock(f<0?0:f); return; }
@@ -1132,7 +1137,7 @@ function applyFix(){
   afterFix("直しました",k);
 }
 function afterFix(msg,keep){
-  yure=buildYure(cur);
+  yure=buildYure(cur); buildMine();
   penCache=readWork(cur, kindOf(cur.kind).cats);
   saveWork(true); closeSheet(); openBlock(pos,keep); toast(msg);
 }
@@ -1634,6 +1639,144 @@ function renderNotes(){
 }
 
 /* ============================================================
+   差分回収——自分の直しから、直しの型を拾う
+   manuscript-qa の③と同じ数え方（頻度2以上を規則候補）に揃えてある。
+   あちらは作品が終わってから納品稿と最終稿を突き合わせるが、
+   こちらは直している最中の「もと→直し」の対をそのまま使う。
+   ============================================================ */
+function diffRuns(a,b){
+  const la=a.length, lb=b.length, out=[];
+  let p=0; while(p<la&&p<lb&&a[p]===b[p]) p++;
+  let q=0; while(q<la-p&&q<lb-p&&a[la-1-q]===b[lb-1-q]) q++;
+  const A=a.slice(p,la-q), B=b.slice(p,lb-q);
+  if(p) out.push({t:"same",s:a.slice(0,p)});
+  if(!A.length&&B.length) out.push({t:"add",s:B});
+  else if(A.length&&!B.length) out.push({t:"del",s:A});
+  else if(A.length&&B.length){
+    if(A.length*B.length>40000){ out.push({t:"del",s:A}); out.push({t:"add",s:B}); }
+    else{
+      const n=A.length, m=B.length, w=m+1, dp=new Uint16Array((n+1)*w);
+      for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--)
+        dp[i*w+j] = A[i]===B[j] ? dp[(i+1)*w+j+1]+1 : Math.max(dp[(i+1)*w+j], dp[i*w+j+1]);
+      let i=0, j=0, buf=null;
+      const push=(t,ch)=>{ if(buf&&buf.t===t) buf.s+=ch; else { buf={t:t,s:ch}; out.push(buf); } };
+      while(i<n&&j<m){
+        if(A[i]===B[j]){ push("same",A[i]); i++; j++; }
+        else if(dp[(i+1)*w+j]>=dp[i*w+j+1]){ push("del",A[i]); i++; }
+        else { push("add",B[j]); j++; }
+      }
+      while(i<n){ push("del",A[i]); i++; }
+      while(j<m){ push("add",B[j]); j++; }
+    }
+  }
+  if(q) out.push({t:"same",s:a.slice(la-q)});
+  return slideRuns(out);
+}
+/* 同じ結果になる並びが複数あるとき、消した・足した部分を右へ寄せる。
+   「言わなかったのだった」→「言わなかった」で「ったのだ」ではなく「のだった」を切り出すため */
+function slideRuns(runs){
+  for(let i=0;i<runs.length;i++){
+    const r=runs[i];
+    if(r.t==="same"||!runs[i+1]||runs[i+1].t!=="same") continue;
+    const nx=runs[i+1]; let moved="";
+    while(nx.s.length && r.s[0]===nx.s[0]){ moved+=r.s[0]; r.s=r.s.slice(1)+nx.s[0]; nx.s=nx.s.slice(1); }
+    if(moved){
+      if(i>0&&runs[i-1].t==="same") runs[i-1].s+=moved; else { runs.splice(i,0,{t:"same",s:moved}); i++; }
+      if(!nx.s.length) runs.splice(i+1,1);
+    }
+  }
+  return runs;
+}
+const PUNCT=/^[、。，．・…—―　\s]+$/;
+/* 一組の「もと→直し」を、直しの型に割る */
+function diffMoves(a,b){
+  const runs=diffRuns(a,b), out=[];
+  let at=0;
+  for(let i=0;i<runs.length;i++){
+    const r=runs[i], nx=runs[i+1];
+    if(r.t==="same"){ at+=r.s.length; continue; }
+    const start=at;
+    let m=null;
+    if(r.t==="del"&&nx&&nx.t==="add"){ m={k:"sub",a:r.s,b:nx.s}; at+=r.s.length; i++; }
+    else if(r.t==="add"&&nx&&nx.t==="del"){ m={k:"sub",a:nx.s,b:r.s}; at+=nx.s.length; i++; }
+    else if(r.t==="del"){ m={k:"del",a:r.s}; at+=r.s.length; }
+    else m={k:"add",b:r.s};
+    const seg=(m.a||"")+(m.b||"");
+    if(PUNCT.test(seg)) m.k="punct";
+    else if((m.a||"").length>12||(m.b||"").length>12) m.k="rewrite";
+    else if(m.k==="sub"||m.k==="del"){
+      const end=start+(m.a||"").length;
+      const tailAt=a.replace(/[。！？」』）\s]+$/,"").length;   /* 句点や閉じかっこは除いて数える */
+      if(tailAt-end<=3 && tailAt-end>=-1) m.k="tail";           /* 文の終わりのあたり＝語尾の直し */
+    }
+    out.push(m);
+  }
+  return out;
+}
+function harvest(){
+  const t={sub:{},tail:{},del:{},add:{}}, n={punct:0,rewrite:0,move:0,fix:0};
+  (cur.log||[]).forEach(l=>{
+    if(typeof l.o!=="string"||typeof l.n!=="string"||l.o===l.n) return;
+    n.fix++;
+    diffMoves(l.o,l.n).forEach(m=>{
+      n.move++;
+      if(m.k==="punct"){ n.punct++; return; }
+      if(m.k==="rewrite"){ n.rewrite++; return; }
+      const key = (m.k==="add")? m.b : (!m.b? m.a : m.a+" → "+m.b);   /* 語尾を丸ごと削ったときは言い換え先がない */
+      const box = t[m.k==="tail"?"tail":m.k];
+      if(box) box[key]=(box[key]||0)+1;
+    });
+  });
+  const sort=o=>Object.keys(o).map(k=>({k:k,n:o[k]})).sort((x,y)=>y.n-x.n||x.k.localeCompare(y.k));
+  return {sub:sort(t.sub), tail:sort(t.tail), del:sort(t.del), add:sort(t.add), n:n};
+}
+const CATN={sub:"言い換えた",tail:"語尾を直した",del:"削った",add:"足した"};
+function harvestRows(h,min){
+  const out=[];
+  ["sub","tail","del"].forEach(c=>h[c].forEach(x=>{ if(x.n>=min) out.push({c:c,k:x.k,n:x.n}); }));
+  return out.sort((a,b)=>b.n-a.n);
+}
+function harvestText(){
+  const h=harvest(), cand=harvestRows(h,2), once=harvestRows(h,1).filter(x=>x.n<2);
+  let out="# 朱入れ　直しの回収\n";
+  out+="作品：「"+cur.title+"」　"+jdate()+"　"+cur.pass+"回目までの通し\n";
+  out+="直した行 "+h.n.fix+"／直しの箇所 "+h.n.move+"\n\n";
+  out+="頻度2以上を規則候補として並べます（manuscript-qa の差分回収と同じ数えかた）。\n";
+  out+="読点の増減と語の足しは本人の領分なので、件数だけにしてあります。\n\n";
+  out+="【規則候補】同じ直しを二回以上\n";
+  out+= cand.length? cand.map(x=>"　"+CATN[x.c]+"　"+x.k+"　"+x.n+"回").join("\n")+"\n" : "　まだありません\n";
+  out+="\n【一度きり】参考\n";
+  out+= once.length? once.slice(0,60).map(x=>"　"+CATN[x.c]+"　"+x.k).join("\n")+"\n" : "　ありません\n";
+  out+="\n【本人の領分・規則にしない】\n";
+  out+="　読点や記号の増減 "+h.n.punct+"／語を足した "+h.add.reduce((a,x)=>a+x.n,0)+"\n";
+  out+="　書き直し（十二字を超える直し）"+h.n.rewrite+"\n";
+  return out;
+}
+
+/* 自分の直しから作る鉛筆。同じ直しを二回以上したら、その形が残っている行に線を引く。
+   汎用の禁則ではなく、この原稿で自分がやっている直しから作るので manuscript-qa と重ならない */
+let mineCache=[];
+function buildMine(){
+  mineCache=[];
+  if(!cur||conf.mine===false) return;
+  const h=harvest();
+  const seen={};
+  harvestRows(h,2).forEach(x=>{
+    const a = x.k.split(" → ")[0];
+    const b = x.k.split(" → ")[1]||"";
+    if(!a||a.length<2||seen[a]) return;                /* 一字は当たりすぎるので拾わない */
+    seen[a]=true;
+    const label = x.c==="del"? "よく削る「"+a+"」（"+x.n+"回）"
+                : x.c==="tail"? (b? "語尾をよく直す「"+a+"」→「"+b+"」（"+x.n+"回）" : "語尾をよく削る「"+a+"」（"+x.n+"回）")
+                : "よく直す「"+a+"」→「"+b+"」（"+x.n+"回）";
+    mineCache.push({id:"mine:"+x.c+":"+a, cat:"mine", name:label, desc:"", kind:x.c, a:a,
+      f: x.c==="tail"
+        ? s=>{ const t=s.replace(/[。！？」』）\s]+$/,""); return t.slice(-(a.length+3)).indexOf(a)>=0? label : null; }
+        : s=>s.indexOf(a)>=0? label : null });
+  });
+}
+
+/* ============================================================
    画面：傾向表
    ============================================================ */
 function renderReport(){
@@ -1642,9 +1785,23 @@ function renderReport(){
   all.forEach(m=>{ for(const k in m) m[k].forEach(x=>{ tally[x.id]=(tally[x.id]||0)+1; total++; }); });
   const byPass={};
   cur.log.forEach(l=>{ byPass[l.p]=byPass[l.p]||{n:0,kind:l.k}; byPass[l.p].n++; });
-  $("rp-lead").textContent="いま本文に残っている、機械が拾える指摘です。設定で消した項目もここでは数えます。同じ種類が減っていけば、直す手が身についたということ。";
+  $("rp-lead").textContent="上は、あなたが実際に直したことの傾向。下は、機械が拾える指摘の残り。";
   const cats=["hyoki","buntai","seigou"];
   let html="";
+  const h=harvest(), cand=harvestRows(h,2), once=harvestRows(h,1).filter(x=>x.n<2);
+  html+='<p class="cat-h">直しの傾向　'+h.n.fix+'行</p>';
+  if(!h.n.fix){
+    html+='<p class="lead">行を直すと、ここに「何を削り、何に言い換えたか」が集まります。同じ直しが二回出たら、その形が残っている行に鉛筆が引かれます。</p>';
+  }else{
+    html+='<p class="lead">同じ直しを二回以上したものを規則候補として並べます。読点の増減と語の足しは本人の領分なので数えません。</p>';
+    html+='<table class="tally"><tbody>'+
+      (cand.length? cand.map(x=>'<tr><td><span style="font-size:11px;color:var(--dim)">'+CATN[x.c]+'</span>　'+esc(x.k)+'</td><td class="n">'+x.n+'</td></tr>').join("")
+                  : '<tr class="zero"><td>二回以上の直しは、まだありません</td><td class="n">0</td></tr>')+
+      '</tbody></table>';
+    if(mineCache.length) html+='<p class="lead" style="margin-top:8px">ここから<b>'+mineCache.length+'本</b>の鉛筆を作って、残っている行に引いています。</p>';
+    if(once.length) html+='<p class="lead" style="margin-top:8px;font-size:12px">一度きり（参考）：'+esc(once.slice(0,12).map(x=>x.k).join("　／　"))+(once.length>12?"　…":"")+'</p>';
+    html+='<p class="lead" style="font-size:12px">本人の領分：読点や記号の増減 '+h.n.punct+'／語を足した '+h.add.reduce((a,x)=>a+x.n,0)+'／書き直し '+h.n.rewrite+'</p>';
+  }
   cats.forEach(c=>{
     const rs=RULES.filter(r=>r.cat===c);
     const sum=rs.reduce((a,r)=>a+(tally[r.id]||0),0);
@@ -1703,6 +1860,7 @@ const WHEN=[
 function renderConf(){
   $("c-when").innerHTML=WHEN.map(w=>'<button class="pick '+(conf.wordWhen===w.id?"on":"")+'" data-w="'+w.id+'"><b>'+esc(w.name)+'</b><span>'+esc(w.note)+'</span></button>').join("");
   $("c-when").querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ conf.wordWhen=b.dataset.w; saveConf(); renderConf(); });
+  $("c-mine").classList.toggle("on",conf.mine!==false);
   $("c-dir").classList.toggle("hide",!canDir());
   $("c-dirstat").textContent = !canDir()
     ? "この端末ではフォルダを選べません。控えはいつもの場所へダウンロードされ、同じ名前のファイルが増えていきます。"
@@ -1725,7 +1883,7 @@ function renderConf(){
   $("c-quota").onchange=()=>{ conf.quota=Math.max(1,Math.min(50,+$("c-quota").value||3)); saveConf(); renderQuota(); };
   view("conf");
 }
-function saveConf(){ jset(K_CONF,conf); if(cur){ penCache=readWork(cur,kindOf(cur.kind).cats); } }
+function saveConf(){ jset(K_CONF,conf); if(cur){ buildMine(); penCache=readWork(cur,kindOf(cur.kind).cats); } }
 
 /* ============================================================
    画面：この道具について
@@ -1771,10 +1929,11 @@ $("c-back").onclick=()=>{ if(cur){ renderWork(); view("work"); } else { renderHo
 $("ab-back").onclick=()=>{ renderHome(); view("home"); };
 $("btn-conf").onclick=renderConf;
 $("c-dir").onclick=pickDir;
+$("c-mine").onclick=()=>{ conf.mine=conf.mine===false; saveConf(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats); renderConf(); };
 $("btn-conf2").onclick=renderConf;
 $("btn-about").onclick=()=>view("about");
-$("c-all").onclick=()=>{ RULES.forEach(r=>conf.rules[r.id]=true); saveConf(); renderConf(); };
-$("c-none").onclick=()=>{ RULES.forEach(r=>conf.rules[r.id]=false); saveConf(); renderConf(); };
+$("c-all").onclick=()=>{ RULES.forEach(r=>conf.rules[r.id]=true); conf.mine=true; saveConf(); renderConf(); };
+$("c-none").onclick=()=>{ RULES.forEach(r=>conf.rules[r.id]=false); conf.mine=false; saveConf(); renderConf(); };
 
 $("a-save").onclick=()=>{
   const title=$("a-title").value.trim()||"無題";
@@ -1826,6 +1985,8 @@ $("btn-out").onclick=()=>{
 };
 $("o-txt").onclick=outText; $("o-docx").onclick=outDocx;
 $("o-note-docx").onclick=outNoteDocx; $("o-note-txt").onclick=outNoteText; $("o-orig").onclick=outOrig;
+$("o-harvest").onclick=()=>saveText(harvestText(),cur.title+"_直しの回収_"+stamp()+".txt");
+$("o-pair").onclick=()=>{ saveText(origText(cur),cur.title+"_もと.txt"); setTimeout(()=>saveText(workText(cur),cur.title+"_直し.txt"),400); };
 
 $("r-nextpen").onclick=()=>{
   const holds=[...$("r-text").querySelectorAll(".lnhold.pen")];
