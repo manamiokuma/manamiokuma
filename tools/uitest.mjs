@@ -104,6 +104,33 @@ await step("付箋を貼るとその場でひとこと足せる", async () => {
   await p.locator(".tags .tagfree").first().fill("なんだか遠い");
   await p.locator(".tags .tagfree").first().blur();
 });
+await step("かな漢字変換の途中でEnterを横取りしない", async () => {
+  const inp = p.locator(".tags .tagfree").first();
+  await inp.click();
+  const 変換中 = await inp.evaluate(el => {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true, bubbles: true }));
+    return document.activeElement === el;
+  });
+  must(変換中, "変換の確定でEnterを取られて、欄から出てしまう");
+  const 確定後 = await inp.evaluate(el => {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    return document.activeElement === el;
+  });
+  must(!確定後, "変換していないEnterでは入力を終えたい");
+});
+await step("ひとことに読点を打っても消えない", async () => {
+  const inp = p.locator(".tags .tagfree").first();
+  await inp.fill("台詞のあと、間が足りない");
+  await inp.blur();
+  await p.waitForTimeout(200);
+  await p.click("#r-back");
+  await p.click("#btn-go");
+  const v = await p.locator(".tags .tagfree").first().inputValue();
+  must(v === "台詞のあと、間が足りない", "読点が置き換わっている: " + v);
+  must((await p.locator(".tags .tag.on").count()) === 1, "札が消えた");
+  await p.locator(".tags .tagfree").first().fill("なんだか遠い");
+  await p.locator(".tags .tagfree").first().blur();
+});
 await step("続けて貼っても、ひとこと欄は範囲にひとつ", async () => {
   await p.locator(".ln-f").nth(1).click();          /* 同じ段落の隣の文に貼って範囲にする */
   const n = await p.locator(".tags").count();

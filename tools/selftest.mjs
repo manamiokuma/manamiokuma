@@ -261,26 +261,43 @@ run("まるごとの相談にも案が返ってくる", () => {
   ev(`cur.blocks[0].advice = {}; cur.blocks[0].wide = {on:false, memo:""}; cur.blocks[0].fusen = [3]`);
 });
 run("手触りは行の付箋にも付けられる", () => {
-  ev(`cur.blocks[0].fmemo = {3: "重い、視点が動く"}`);
+  ev(`cur.blocks[0].ftags = {3: ["重い", "視点が動く"]}; cur.blocks[0].fmemo = {}`);
   truthy(ev("talkText()").indexOf("手触り：重い、視点が動く") >= 0, "行の手触りが渡らない");
   const rows = ev("noteRows()");
   truthy(rows.some(r => r.type === "fusen" && r.m === "重い、視点が動く"), "控えに手触りが載らない");
   truthy(ev("noteTextBody()").indexOf(" 手触り：") >= 0, "控えのテキストに手触りがない");
 });
 run("続きの範囲では、手触りを一度だけ聞く", () => {
-  ev(`cur.blocks[0].fusen = [0, 1]; cur.blocks[0].fmemo = {1: "重い"}`);
+  ev(`cur.blocks[0].fusen = [0, 1]; cur.blocks[0].ftags = {1: ["重い"]}; cur.blocks[0].fmemo = {}`);
   const t = ev("talkText()");
   eq(t.split("手触り：").length - 1, 1, "範囲の中で手触りが繰り返されている");
   truthy(t.indexOf("手触り：重い") >= 0, "範囲のどこに書いても拾えるべき");
-  ev(`cur.blocks[0].fusen = [3]; cur.blocks[0].fmemo = {}`);
+  ev(`cur.blocks[0].fusen = [3]; cur.blocks[0].ftags = {}; cur.blocks[0].fmemo = {}`);
 });
-run("札とひとことは混ぜて持てる", () => {
-  eq(ev(`memoTags("重い、なんだか遠い、視点が動く").join("／")`), "重い／視点が動く", "札だけを取り出せない");
-  eq(ev(`memoFree("重い、なんだか遠い、視点が動く")`), "なんだか遠い", "ひとことだけを取り出せない");
-  eq(ev(`memoJoin(["重い"], "なんだか遠い")`), "重い、なんだか遠い");
+run("札とひとことは別々に持つ", () => {
+  ev(`cur.blocks[0].ftags = {3: ["重い", "視点が動く"]}; cur.blocks[0].fmemo = {3: "台詞のあと、間が足りない"}`);
+  const m = ev(`memoOf(cur.blocks[0], 3)`);
+  eq(m.tags.join("／"), "重い／視点が動く", "札が取り出せない");
+  eq(m.free, "台詞のあと、間が足りない", "ひとことの読点が失われている");
+  eq(ev(`memoText(memoOf(cur.blocks[0], 3))`), "重い、視点が動く、台詞のあと、間が足りない");
+});
+run("ひとことに読点を打っても札と混ざらない", () => {
+  ev(`cur.blocks[0].ftags = {}; cur.blocks[0].fmemo = {3: "重い、と思ったが違う"}`);
+  const m = ev(`memoOf(cur.blocks[0], 3)`);
+  eq(m.tags.length, 0, "ひとことの中の語を札と取り違えている");
+  eq(m.free, "重い、と思ったが違う", "ひとことが削られている");
+});
+run("古い持ちかたからは、札とひとことに分けて引き継ぐ", () => {
+  ev(`__old = {v:2, blocks:[{t:"あ。", done:false, note:"", marks:[], fusen:[3], edits:{}, advice:{},
+       fmemo:{3:"重い、なんだか遠い"}, wide:{on:true, memo:"なんとなく変"}}], pass:1, kind:"typo", log:[], history:[]}`);
+  ev(`migrate(__old)`);
+  eq(ev(`__old.blocks[0].ftags[3].join("／")`), "重い", "札が引き継がれない");
+  eq(ev(`__old.blocks[0].fmemo[3]`), "なんだか遠い", "ひとことが引き継がれない");
+  eq(ev(`__old.blocks[0].wide.tags.join("／")`), "なんとなく変", "まるごとの札が引き継がれない");
+  eq(ev(`__old.blocks[0].wide.memo`), "", "まるごとのひとことが残ってしまう");
 });
 run("返事を貼ると番号どおりに案が付く", () => {
-  ev(`cur.blocks[0].fmemo = {}`);
+  ev(`cur.blocks[0].ftags = {}; cur.blocks[0].fmemo = {}`);
   const 返事 = [
     "承知しました。三件みていきます。",
     "",

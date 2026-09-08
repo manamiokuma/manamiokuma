@@ -506,9 +506,9 @@ function cutBlocks(text,size){
   const out=[];
   sections(t).forEach(sec=>{
     const h=isHead(sec.split("\n")[0]||"");
-    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},fmemo:{},wide:{on:false,memo:""},head:bi===0&&h}));
+    splitSize(sec,size).forEach((b,bi)=>out.push({t:b,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},fmemo:{},ftags:{},wide:{on:false,memo:"",tags:[]},head:bi===0&&h}));
   });
-  return out.length?out:[{t:t,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},fmemo:{},wide:{on:false,memo:""},head:false}];
+  return out.length?out:[{t:t,done:false,note:"",marks:[],fusen:[],edits:{},advice:{},fmemo:{},ftags:{},wide:{on:false,memo:"",tags:[]},head:false}];
 }
 
 /* ---------- 一区切りを一文ずつに割る（null＝改行） ---------- */
@@ -802,7 +802,13 @@ function migrate(w){
     delete w.done; delete w.notes; delete w.marks;
   }
   w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.advice=b.advice||{};
-    b.fmemo=b.fmemo||{}; b.wide=b.wide||{on:false,memo:""}; b.note=b.note||""; });
+    b.fmemo=b.fmemo||{}; b.wide=b.wide||{on:false,memo:""}; b.note=b.note||"";
+    if(!b.ftags){                       /* 札とひとことを分ける（古い持ちかたからの移行） */
+      b.ftags={};
+      Object.keys(b.fmemo).forEach(k=>{ const x=splitOldMemo(b.fmemo[k]); b.ftags[k]=x.t; if(x.f) b.fmemo[k]=x.f; else delete b.fmemo[k]; });
+    }
+    if(b.wide.tags===undefined){ const x=splitOldMemo(b.wide.memo); b.wide.tags=x.t; b.wide.memo=x.f; }
+  });
   w.pass=w.pass||1; w.kind=w.kind||"typo"; w.log=w.log||[]; w.history=w.history||[]; w.v=2;
   if(w.world===undefined){ w.world="none"; w.r18=true; w.moreSkills=""; }
   if(w.due===undefined) w.due=null;   /* R18は既定で入っている前提 */
@@ -946,7 +952,7 @@ function openBlock(i,keep){
       '<button class="ln-t" data-k="'+k+'">'+esc(t)+'</button>'+
       '<button class="ln-s" data-s="'+k+'" aria-label="朱を置く">朱</button>'+
       '<button class="ln-f" data-f="'+k+'" aria-label="付箋を貼る">付</button></div>'+
-      ((fs&&b.fusen.indexOf(k+1)<0)?memoRow(k,b.fmemo[k]):"")+
+      ((fs&&b.fusen.indexOf(k+1)<0)?memoRow(k):"")+
       (b.advice[k]?'<button class="adv-msg" data-a="'+k+'">Claudeの案 '+(advCands(b.advice[k]).length||1)+'件　押して開く</button>':'')+
       (pe?'<div class="pen-msg">'+pe.map(x=>'<u>'+esc(x.msg)+'</u>').join("　")+'</div>':'')+'</div>';
   }).join("");
@@ -963,15 +969,19 @@ function openBlock(i,keep){
   anchorPut(a);
 }
 /* 付箋のコメント。押すだけの札と、ひとこと。key は行番号か "wide" */
-function memoRow(key,val){
-  const tags=memoTags(val);
+function memoRow(key){
+  const m=memoOf(cur.blocks[pos],key);
   return '<div class="tags" data-m="'+key+'">'+
-    TOUCH.map(t=>'<button class="tag'+(tags.indexOf(t)>=0?" on":"")+'" data-t="'+esc(t)+'">'+esc(t)+'</button>').join("")+
-    '<input class="tagfree" value="'+esc(memoFree(val))+'" placeholder="ひとこと（任意）">'+
+    TOUCH.map(t=>'<button class="tag'+(m.tags.indexOf(t)>=0?" on":"")+'" data-t="'+esc(t)+'">'+esc(t)+'</button>').join("")+
+    '<input class="tagfree" value="'+esc(m.free)+'" placeholder="ひとこと（任意）">'+
     '</div>';
 }
-function getMemo(key){ const b=cur.blocks[pos]; return key==="wide"?(b.wide.memo||""):(b.fmemo[key]||""); }
-function setMemo(key,v){
+function setTags(key,tags){
+  const b=cur.blocks[pos];
+  if(key==="wide") b.wide.tags=tags; else if(tags.length) b.ftags[key]=tags; else delete b.ftags[key];
+  saveWork();
+}
+function setFree(key,v){
   const b=cur.blocks[pos];
   if(key==="wide") b.wide.memo=v; else if(v) b.fmemo[key]=v; else delete b.fmemo[key];
   saveWork();
@@ -980,9 +990,9 @@ function wireMemoRows(root){
   root.querySelectorAll(".tags").forEach(row=>{
     const key=row.dataset.m;
     row.querySelectorAll(".tag").forEach(el=>el.onclick=()=>{
-      const now=getMemo(key), tags=memoTags(now), t=el.dataset.t, i=tags.indexOf(t);
+      const tags=memoOf(cur.blocks[pos],key).tags.slice(), t=el.dataset.t, i=tags.indexOf(t);
       if(i>=0) tags.splice(i,1); else tags.push(t);
-      setMemo(key,memoJoin(tags,memoFree(now)));
+      setTags(key,tags);
       el.classList.toggle("on",i<0);
     });
     const inp=row.querySelector(".tagfree");
@@ -993,9 +1003,16 @@ function wireMemoRows(root){
       requestAnimationFrame(()=>anchorPut(a));
       setTimeout(()=>anchorPut(a),300);    /* 携帯のキーボードが閉じきるのを待つ */
     };
+    let imeing=false;                     /* かな漢字変換のあいだは、Enterを横取りしない */
+    inp.addEventListener("compositionstart",()=>{ imeing=true; });
+    inp.addEventListener("compositionend",()=>{ imeing=false; });
     inp.onfocus=()=>{ anc=anchorGet(key); };
-    inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } };
-    inp.onchange=()=>{ const now=getMemo(key); setMemo(key,memoJoin(memoTags(now),inp.value.trim().replace(/[、,]/g,"／"))); back(); };
+    inp.onkeydown=e=>{
+      if(e.key!=="Enter") return;
+      if(imeing||e.isComposing||e.keyCode===229) return;   /* 変換の確定はそのまま通す */
+      e.preventDefault(); inp.blur();
+    };
+    inp.onchange=()=>{ setFree(key,inp.value.trim()); back(); };
     inp.onblur=back;
   });
 }
@@ -1003,7 +1020,7 @@ function renderWideBox(){
   const b=cur.blocks[pos], on=b.wide.on, adv=b.advice.all;
   $("r-wide-box").innerHTML='<div class="wide'+(on?" on":"")+'">'+
     '<button class="widebtn" id="r-wide">'+(on?"この区切りまるごとの付箋をはがす":"どこが変か分からない — この区切りごと相談する")+'</button>'+
-    (on?memoRow("wide",b.wide.memo):"")+
+    (on?memoRow("wide"):"")+
     (on&&adv?'<button class="adv-msg" data-a="all">Claudeの案　押して読む</button>':'')+
     '</div>';
   $("r-wide").onclick=()=>{
@@ -1042,7 +1059,7 @@ function toggleMark(k){
 /* 付箋＝直したいが、どう直すかまだ決まっていない行 */
 function toggleFusen(k){
   const b=cur.blocks[pos], j=b.fusen.indexOf(k);
-  if(j>=0){ b.fusen.splice(j,1); delete b.fmemo[k]; }
+  if(j>=0){ b.fusen.splice(j,1); delete b.fmemo[k]; delete b.ftags[k]; }
   else { b.fusen.push(k); b.fusen.sort((x,y)=>x-y); }
   const hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
   if(hold) hold.querySelector(".ln").classList.toggle("fs",j<0);
@@ -1056,7 +1073,7 @@ function syncMemoRow(k){
   const b=cur.blocks[pos], hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
   if(!hold) return;
   const want=b.fusen.indexOf(k)>=0 && b.fusen.indexOf(k+1)<0, now=hold.querySelector(".tags");
-  if(want&&!now){ hold.querySelector(".ln").insertAdjacentHTML("afterend",memoRow(k,b.fmemo[k])); wireMemoRows(hold); }
+  if(want&&!now){ hold.querySelector(".ln").insertAdjacentHTML("afterend",memoRow(k)); wireMemoRows(hold); }
   else if(!want&&now) now.remove();
 }
 function saveMemo(){
@@ -1289,9 +1306,9 @@ function blockParas(i){
   flush();
   const rows=[];
   Object.keys(b.edits).map(Number).sort((x,y)=>x-y).forEach(k=>rows.push(["直",ls[k],b.edits[k]]));
-  b.fusen.slice().sort((x,y)=>x-y).forEach(k=>rows.push(["付",lineText(b,ls,k),(b.fmemo[k]||"").trim()]));
+  b.fusen.slice().sort((x,y)=>x-y).forEach(k=>rows.push(["付",lineText(b,ls,k),memoText(memoOf(b,k)).trim()]));
   b.marks.forEach(k=>{ if(b.edits[k]===undefined) rows.push(["朱",lineText(b,ls,k),""]); });
-  if(b.wide&&b.wide.on) rows.push(["付","（この区切りまるごと）",(b.wide.memo||"").trim()]);
+  if(b.wide&&b.wide.on) rows.push(["付","（この区切りまるごと）",memoText(memoOf(b,"wide")).trim()]);
   if(b.note.trim()) rows.push(["覚",b.note.trim(),""]);
   if(rows.length){
     ps.push(para([{t:"控え",b:true,sz:21}],true));
@@ -1365,10 +1382,10 @@ function noteRows(){
     ks.forEach(k=>{
       const fixed=b.edits[k]!==undefined;
       if(fixed) rows.push({b:i,k:k,type:"fix",o:ls[k],n:b.edits[k]});
-      if(b.fusen.indexOf(k)>=0) rows.push({b:i,k:k,type:"fusen",o:lineText(b,ls,k),a:b.advice[k]||"",m:(b.fmemo[k]||"").trim()});
+      if(b.fusen.indexOf(k)>=0) rows.push({b:i,k:k,type:"fusen",o:lineText(b,ls,k),a:b.advice[k]||"",m:memoText(memoOf(b,k)).trim()});
       if(b.marks.indexOf(k)>=0 && !fixed) rows.push({b:i,k:k,type:"mark",o:lineText(b,ls,k)});
     });
-    if(b.wide&&b.wide.on) rows.push({b:i,k:-2,type:"fusen",o:"（この区切りまるごと）",a:b.advice.all||"",m:(b.wide.memo||"").trim()});
+    if(b.wide&&b.wide.on) rows.push({b:i,k:-2,type:"fusen",o:"（この区切りまるごと）",a:b.advice.all||"",m:memoText(memoOf(b,"wide")).trim()});
     if(b.note.trim()) rows.push({b:i,k:-1,type:"note",o:b.note.trim()});
   });
   return rows.sort((a,c)=>a.b-c.b||a.k-c.k);
@@ -1461,16 +1478,27 @@ function itemTotal(){ return cur.blocks.reduce((a,b,i)=>a+blockItems(b,i).length
 const advKey=it=>it.a<0?"all":it.a;
 /* 手触りの一言。押すだけの札と、書き足したぶん */
 const TOUCH=["なんとなく変","重い","説明しすぎ","間が悪い","視点が動く","声じゃない","言葉が浮く"];
-function memoParts(x){ return String(x||"").split(/[、,]/).map(y=>y.trim()).filter(Boolean); }
-function memoTags(x){ return memoParts(x).filter(y=>TOUCH.indexOf(y)>=0); }
-function memoFree(x){ return memoParts(x).filter(y=>TOUCH.indexOf(y)<0).join("、"); }
-function memoJoin(tags,free){ return tags.concat(free?[free]:[]).join("、"); }
+/* 札（ftags）とひとこと（fmemo）は別々に持つ。
+   一本の文字列に読点でつないでいた頃は、ひとことに読点を打てなかった */
+function splitOldMemo(v){
+  const parts=String(v||"").split(/[、,]/).map(y=>y.trim()).filter(Boolean);
+  return {t:parts.filter(y=>TOUCH.indexOf(y)>=0), f:parts.filter(y=>TOUCH.indexOf(y)<0).join("、")};
+}
+function memoOf(b,key){
+  if(key==="wide") return {tags:(b.wide.tags||[]), free:(b.wide.memo||"")};
+  return {tags:(b.ftags[key]||[]), free:(b.fmemo[key]||"")};
+}
+function memoText(m){ return m.tags.concat(m.free?[m.free]:[]).join("、"); }
 function itemMemo(it){
   const b=cur.blocks[it.b];
-  if(it.a<0) return (b.wide.memo||"").trim();
-  const out=[];
-  for(let k=it.a;k<=it.z;k++) memoParts(b.fmemo[k]).forEach(x=>{ if(out.indexOf(x)<0) out.push(x); });
-  return out.join("、");
+  if(it.a<0) return memoText(memoOf(b,"wide")).trim();
+  const tags=[], free=[];
+  for(let k=it.a;k<=it.z;k++){
+    const m=memoOf(b,k);
+    m.tags.forEach(x=>{ if(tags.indexOf(x)<0) tags.push(x); });
+    if(m.free && free.indexOf(m.free)<0) free.push(m.free);
+  }
+  return tags.concat(free).join("、");
 }
 function ctxLines(b,ls,k,n){
   const out=[], step=n<0?-1:1, want=Math.abs(n);
