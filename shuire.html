@@ -351,6 +351,8 @@
     <p class="hint" style="margin:7px 0 16px">直した箇所を「もとの文 → 直した文」で並べます。何をしたかの台帳。</p>
     <button class="go quiet" id="o-orig">もとの本文（テキスト）</button>
     <p class="hint" style="margin:7px 0 16px">読み込んだときのまま。取り違えたときの控えに。</p>
+    <button class="go quiet" id="o-carry">執筆に持っていく（テキスト）</button>
+    <p class="hint" style="margin:7px 0 16px">二回以上そろった直しの癖を、出自（作品名・日付・件数）つきで一枚に。執筆の頭に貼るか、writing-style の規則に上げる用です。</p>
     <button class="go quiet" id="o-harvest">直しの回収（テキスト）</button>
     <button class="go quiet" id="o-pair" style="margin-top:9px">差分回収に渡す二本（もと／直し）</button>
     <p class="hint" style="margin:7px 0 0">「直しの回収」は、何を削り何に言い換えたかの集計。「二本」は manuscript-qa の差分回収にそのまま渡せる、もとの本文と直した本文の対です。</p>
@@ -1733,16 +1735,18 @@ function diffMoves(a,b){
   return out;
 }
 function harvest(entries){
-  const t={sub:{},tail:{},del:{},add:{}}, n={punct:0,rewrite:0,move:0,fix:0};
+  const t={sub:{},tail:{},del:{},add:{}}, n={punct:0,rewrite:0,move:0,fix:0}, src={};
+  const bump=(box,key,c,w)=>{ box[key]=(box[key]||0)+c; src[key]=src[key]||{}; src[key][w]=(src[key][w]||0)+c; };
   (entries||allEdits()).forEach(l=>{
     if(typeof l.o!=="string"||typeof l.n!=="string"||l.o===l.n) return;
+    if(l.auto) return;                                /* 機械がまとめて当てた分は、癖として数えない（自分で自分を育てない） */
     n.fix++;
+    const w=l.w||(cur?cur.title:"この作品");
     if(l.memo){                                       /* 差分メモは「直しそのもの」なので、そのまま数える */
       const c=l.c||1; n.move+=c;
       if(l.o.length>12||l.n.length>12){ n.rewrite+=c; return; }
       if(PUNCT.test(l.o+l.n)){ n.punct+=c; return; }
-      const box= l.n? t.sub : t.del, key= l.n? l.o+" → "+l.n : l.o;
-      box[key]=(box[key]||0)+c;
+      bump(l.n? t.sub : t.del, l.n? l.o+" → "+l.n : l.o, c, w);
       return;
     }
     diffMoves(l.o,l.n).forEach(m=>{
@@ -1751,16 +1755,59 @@ function harvest(entries){
       if(m.k==="rewrite"){ n.rewrite++; return; }
       const key = (m.k==="add")? m.b : (!m.b? m.a : m.a+" → "+m.b);   /* 語尾を丸ごと削ったときは言い換え先がない */
       const box = t[m.k==="tail"?"tail":m.k];
-      if(box) box[key]=(box[key]||0)+1;
+      if(box) bump(box,key,1,w);
     });
   });
-  const sort=o=>Object.keys(o).map(k=>({k:k,n:o[k]})).sort((x,y)=>y.n-x.n||x.k.localeCompare(y.k));
-  return {sub:sort(t.sub), tail:sort(t.tail), del:sort(t.del), add:sort(t.add), n:n};
+  const sort=o=>Object.keys(o).map(k=>({k:k,n:o[k],src:src[k]||{}})).sort((x,y)=>y.n-x.n||x.k.localeCompare(y.k));
+  return {sub:sort(t.sub), tail:sort(t.tail), del:sort(t.del), add:sort(t.add), n:n, src:src};
 }
 const CATN={sub:"言い換えた",tail:"語尾を直した",del:"削った",add:"足した"};
+/* 規則候補を本文にまとめて当てる。語尾（活用が絡む）と一字のものは当てない。
+   当てた行はふつうの直しとして残る（緑・控え・一行ずつ元に戻せる）が、癖としては数えない */
+function ruleHits(row){
+  if(!cur||row.c==="tail") return null;
+  const a=row.k.split(" → ")[0], b=row.k.split(" → ")[1]||"";
+  if(!a||a.length<2) return null;
+  const hits=[];
+  cur.blocks.forEach((blk,i)=>{ const ls=lines(blk.t); ls.forEach((x,k)=>{ if(x===null) return; const t=lineText(blk,ls,k); if(t.indexOf(a)>=0) hits.push({b:i,k:k,t:t}); }); });
+  return {a:a,b:b,hits:hits};
+}
+function applyRule(row){
+  const r=ruleHits(row); if(!r||!r.hits.length) return 0;
+  const ex=r.hits.slice(0,3).map(h=>"　"+h.t.slice(0,30)+(h.t.length>30?"…":"")).join("\n");
+  if(!confirm("「"+r.a+"」を"+(r.b?"「"+r.b+"」にして":"削って")+"、"+r.hits.length+"行にまとめて当てます。一行ずつ元に戻せます。\n\n"+ex)) return 0;
+  let n=0;
+  r.hits.forEach(h=>{
+    const nv=h.t.split(r.a).join(r.b); if(nv===h.t) return;
+    const blk=cur.blocks[h.b], org=lines(blk.t)[h.k];
+    if(nv===org) delete blk.edits[h.k]; else blk.edits[h.k]=nv;
+    cur.log.push({p:cur.pass,k:cur.kind,b:h.b,i:h.k,o:h.t,n:nv,at:Date.now(),auto:true}); n++;
+  });
+  if(cur.log.length>4000) cur.log.splice(0,cur.log.length-4000);
+  yure=buildYure(cur); buildMine(); penCache=readWork(cur,kindOf(cur.kind).cats); saveWork(true);
+  return n;
+}
+/* 執筆に持っていく。書き出しの頭に貼るか、writing-style の規則に出自ごと上げる用 */
+function carryText(){
+  const h=harvest(allEdits()), cand=harvestRows(h,2), works=[...new Set(memory.map(x=>x.w))];
+  let out="【この書き手の直しの癖　執筆時に避けること】\n";
+  out+="出自：朱入れ　"+jdate()+"　作品「"+cur.title+"」"+(works.length? "＋持ち越し（"+works.join("、")+"）" : "")+"\n";
+  if(!cand.length) return out+"（二回以上そろった直しは、まだありません）\n";
+  cand.forEach(x=>{
+    const a=x.k.split(" → ")[0], b=x.k.split(" → ")[1]||"";
+    const line = x.c==="del"? "「"+a+"」を書かない"
+               : x.c==="tail"? (b? "語尾の「"+a+"」は「"+b+"」に" : "「"+a+"」で締めない")
+               : "「"+a+"」は「"+b+"」と書く";
+    const by=Object.keys(x.src).map(w=>w+" "+x.src[w]).join("／");
+    out+="・"+line+"　"+x.n+"回"+(by? "（"+by+"）" : "")+"\n";
+  });
+  out+="\n※ 書き出すときは、この一枚を頭に貼ってください。writing-style の規則に上げるときは、上の出自（作品名・日付・件数）ごと写してください。\n";
+  return out;
+}
+let lastCand=[];
 function harvestRows(h,min){
   const out=[];
-  ["sub","tail","del"].forEach(c=>h[c].forEach(x=>{ if(x.n>=min) out.push({c:c,k:x.k,n:x.n}); }));
+  ["sub","tail","del"].forEach(c=>h[c].forEach(x=>{ if(x.n>=min) out.push({c:c,k:x.k,n:x.n,src:x.src||{}}); }));
   return out.sort((a,b)=>b.n-a.n);
 }
 function harvestText(){
@@ -1933,11 +1980,19 @@ function renderReport(){
     html+='<p class="lead">行を直すと、ここに「何を削り、何に言い換えたか」が集まります。同じ直しが二回出たら、その形が残っている行に鉛筆が引かれます。</p>';
   }else{
     html+='<p class="lead">同じ直しを二回以上したものを規則候補として並べます。読点の増減と語の足しは本人の領分なので数えません。</p>';
+    lastCand=cand;
     html+='<table class="tally"><tbody>'+
-      (cand.length? cand.map(x=>'<tr><td><span style="font-size:11px;color:var(--dim)">'+CATN[x.c]+'</span>　'+esc(x.k)+'</td><td class="n">'+x.n+'</td></tr>').join("")
+      (cand.length? cand.map((x,i)=>{ const r=ruleHits(x), hits=r?r.hits.length:0;
+          return '<tr><td><span style="font-size:11px;color:var(--dim)">'+CATN[x.c]+'</span>　'+esc(x.k)+'</td><td class="n">'+x.n+'</td>'+
+            '<td style="width:1%">'+(hits? '<button class="duebtn" data-apply="'+i+'">当てる '+hits+'行</button>' : (r? '<span style="font-size:11px;color:var(--dim)">本文になし</span>' : '<span style="font-size:11px;color:var(--dim)">鉛筆のみ</span>'))+'</td></tr>'; }).join("")
                   : '<tr class="zero"><td>二回以上の直しは、まだありません</td><td class="n">0</td></tr>')+
       '</tbody></table>';
-    if(mineCache.length) html+='<p class="lead" style="margin-top:8px">ここから<b>'+mineCache.length+'本</b>の鉛筆を作って、残っている行に引いています。</p>';
+    if(cand.length) html+='<p class="hint" style="margin:6px 0 0">「当てる」は、その語句を含む行にまとめて直しを入れます。語尾（活用が絡む）と一字のものは当てず、鉛筆で指すだけにしてあります。当てた行は一行ずつ元に戻せます。</p>'+
+      '<button class="go quiet" id="rp-carry" style="margin-top:10px">執筆に持っていく（写す）</button>';
+    const hitLines=penCache.reduce((a,m)=>{ for(const k in m) if(m[k].some(x=>String(x.id).indexOf("mine:")===0)) a++; return a; },0);
+    html+= mineCache.length
+      ? '<p class="lead" style="margin-top:8px">二回以上そろった直しは<b>'+cand.length+'件</b>。そこから<b>'+mineCache.length+'本</b>の鉛筆を作り、いまの原稿では<b>'+hitLines+'行</b>に当たっています。'+(hitLines? '読む画面で、その行に「よく削る」「よく直す」の線が出ます。' : 'その形が本文に残っていないので、いまは何も引かれていません。')+'</p>'
+      : '<p class="lead" style="margin-top:8px">二回以上そろった直しがまだないので、<b>先回りの鉛筆は働いていません</b>。同じ直しが二回出たときから、その形が残っている行に線が引かれます。'+(conf.mine===false? '（設定で止めてあります）' : '')+'</p>';
     if(once.length) html+='<p class="lead" style="margin-top:8px;font-size:12px">一度きり（参考）：'+esc(once.slice(0,12).map(x=>x.k).join("　／　"))+(once.length>12?"　…":"")+'</p>';
     html+='<p class="lead" style="font-size:12px">本人の領分：読点や記号の増減 '+h.n.punct+'／語を足した '+h.add.reduce((a,x)=>a+x.n,0)+'／書き直し '+h.n.rewrite+'</p>';
   }
@@ -1974,6 +2029,11 @@ function renderReport(){
     html+='<p class="lead">まだ直しがありません。</p>';
   }
   $("rp-body").innerHTML=html;
+  $("rp-body").querySelectorAll("button[data-apply]").forEach(b=>b.onclick=()=>{
+    const n=applyRule(lastCand[+b.dataset.apply]);
+    if(n){ toast(n+"行に当てました。控えに「もと → 直し」で残ります"); renderReport(); }
+  });
+  const c=$("rp-carry"); if(c) c.onclick=async()=>{ try{ await navigator.clipboard.writeText(carryText()); toast("写しました。執筆のセッションの頭に貼ってください"); }catch(e){ toast("うまく写せませんでした。書き出しをお使いください"); } };
   view("report");
 }
 
@@ -2177,6 +2237,7 @@ $("btn-out").onclick=()=>{
 $("o-txt").onclick=outText; $("o-docx").onclick=outDocx;
 $("o-note-docx").onclick=outNoteDocx; $("o-note-txt").onclick=outNoteText; $("o-orig").onclick=outOrig;
 $("o-harvest").onclick=()=>saveText(harvestText(),cur.title+"_直しの回収_"+stamp()+".txt");
+$("o-carry").onclick=()=>saveText(carryText(),cur.title+"_執筆に持っていく_"+stamp()+".txt");
 $("o-pair").onclick=()=>{ saveText(origText(cur),cur.title+"_もと.txt"); setTimeout(()=>saveText(workText(cur),cur.title+"_直し.txt"),400); };
 
 $("r-nextpen").onclick=()=>{

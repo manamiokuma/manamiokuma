@@ -648,6 +648,32 @@ await step("差分メモを貼っても持ち越せる", async () => {
   await p.click("#r-back");
   await p.click("#btn-out");
 });
+await step("規則候補を本文にまとめて当てられる", async () => {
+  await p.click("#o-back");
+  await p.click("#btn-report");
+  const btn = p.locator('tr', { hasText: "白く" }).locator('button[data-apply]').first();
+  must(await btn.count() === 1, "「白く」の行に当てるボタンがない");
+  must((await btn.textContent()).includes("当てる"), "文言が違う: " + (await btn.textContent()));
+  p.once("dialog", d => d.accept());
+  await btn.click();
+  await p.waitForTimeout(300);
+  must((await p.textContent("#rp-body")).includes("本文になし"), "当てたあとも本文に残っている");
+  await p.click("#rp-back");
+  await p.click("#btn-notes");
+  must((await p.textContent("#n-list")).includes("窓の外は煙っていた"), "当てた直しが控えに載らない");
+  await p.click("#n-back");
+});
+await step("執筆に持っていく一枚を書き出せる", async () => {
+  await p.click("#btn-out");
+  const dl = p.waitForEvent("download");
+  await p.click("#o-carry");
+  const d = await dl;
+  must(d.suggestedFilename().includes("執筆に持っていく"), "名前が違う: " + d.suggestedFilename());
+  const st = await d.createReadStream();
+  let body = ""; for await (const c of st) body += c;
+  must(body.includes("出自：朱入れ") && body.includes("旧作"), "出自がない");
+  must(body.includes("「白く」を書かない"), "避けることが書かれていない: " + body.slice(0, 200));
+});
 await step("画面の絵を撮る", async () => {
   await p.click("#o-back");
   await p.screenshot({ path: "tools/tmp-work.png" });

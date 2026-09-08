@@ -473,6 +473,39 @@ run("メモから先回りの鉛筆ができる", () => {
   ev("memory = []; cur = null; curId = null");
 });
 
+console.log("\nあらかじめ直す／執筆に持っていく");
+run("規則候補に出自（どの作品で何回）が付く", () => {
+  ev("memory = []; cur = null; curId = null");
+  ev(`importMemo(${JSON.stringify("静かに を削除　×2")}, "旧作A")`);
+  ev(`__c = {v:2, id:"c", title:"新作", blocks: cutBlocks("　彼は静かに息を吐いた。彼は静かに扉を押した。それから歩き出した。", 2200), pass:1, kind:"typo", history:[],
+       log:[{p:1,k:"typo",b:0,i:0,o:"　彼は静かに窓を閉めた。",n:"　彼は窓を閉めた。",at:1}]}; migrate(__c); cur = __c; curId = "c"; index = []; buildMine()`);
+  const cand = ev("harvestRows(harvest(allEdits()), 2)");
+  eq(cand.length, 1); eq(cand[0].n, 3, "この作品1＋旧作A2");
+  eq(cand[0].src["旧作A"], 2); eq(cand[0].src["新作"], 1, "出自が作品ごとに分かれない: " + JSON.stringify(cand[0].src));
+});
+run("「当てる」は該当する行だけを数え、語尾と一字は当てない", () => {
+  const r = ev("ruleHits(harvestRows(harvest(allEdits()), 2)[0])");
+  eq(r.hits.length, 2, "静かに を含む行の数");
+  eq(ev(`ruleHits({c:"tail", k:"いた → く", n:2})`), null, "語尾を当てようとしている");
+  eq(ev(`ruleHits({c:"del", k:"事", n:5})`), null, "一字を当てようとしている");
+});
+run("当てると行が直り、控えに残り、癖としては数えない", () => {
+  ev("confirm = () => true");
+  eq(ev("applyRule(harvestRows(harvest(allEdits()), 2)[0])"), 2, "当てた行の数");
+  eq(ev("workText(cur)"), "　彼は息を吐いた。彼は扉を押した。それから歩き出した。");
+  eq(ev("Object.keys(cur.blocks[0].edits).length"), 2, "直しとして残っていない");
+  truthy(ev("cur.log.filter(l => l.auto).length === 2"), "機械が当てた印がない");
+  eq(ev("harvestRows(harvest(allEdits()), 2)[0].n"), 3, "当てた分まで癖として数えている");
+  eq(ev("ruleHits(harvestRows(harvest(allEdits()), 2)[0]).hits.length"), 0, "当てたあとも本文に残っている");
+});
+run("執筆に持っていく一枚に、出自と避けることが並ぶ", () => {
+  const t = ev("carryText()");
+  truthy(t.indexOf("執筆時に避けること") >= 0, "見出しがない");
+  truthy(t.indexOf("出自：朱入れ") >= 0 && t.indexOf("旧作A") >= 0, "出自がない: " + t);
+  truthy(t.indexOf("「静かに」を書かない　3回（") >= 0, "避けることが書かれていない: " + t);
+  ev("memory = []; cur = null; curId = null");
+});
+
 console.log("\n締め切りと見通し");
 const 日 = n => { const d = new Date(); d.setDate(d.getDate() - n);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
