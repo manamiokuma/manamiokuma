@@ -413,6 +413,15 @@
     <p class="cat-h">きょうの分</p>
     <div class="field" style="margin-top:8px"><label for="c-quota">一日にこれだけ読めたら上出来、という区切り数</label><input id="c-quota" type="number" inputmode="numeric"></div>
     <p class="hint" style="margin:0 0 4px">少なめに決めておくのがこつです。三区切りでおよそ三十分。締め切りを決めた原稿があるときは、そちらから逆算した数が優先されます。</p>
+    <p class="cat-h">iPhone と PC で揃える</p>
+    <button class="sw" id="c-sync"><i></i><div><b>claude.ai の保管庫に置いて揃える</b><span>点けると、原稿・朱・付箋・直し・持ち越しがこの端末の外——あなたのアカウントだけに見える claude.ai の保管庫——に置かれ、同じページを開いた iPhone と PC で同じものが見えます。消せば、それ以降はこの端末の中だけ（保管庫に置いた分は残ります）。このページを誰かに共有すると原稿も見えるので、共有しないでください</span></div></button>
+    <p class="hint" id="c-syncstat" style="margin:7px 0 6px"></p>
+    <button class="go quiet" id="c-syncnow">いますぐ揃える</button>
+    <p class="cat-h">持ち出し・持ち込み（ファイル）</p>
+    <p class="hint" style="margin:0 0 10px">通信を使わずに運ぶ道。作品・朱・付箋・直し・持ち越しをまるごと一つのファイルにして、もう片方で持ち込みます。控えにもなります。持ち込むときは、新しいほうが勝ちます。</p>
+    <div class="row"><button class="go quiet" id="c-export">持ち出す</button><button class="go quiet" id="c-import">持ち込む</button></div>
+    <input id="c-importfile" type="file" accept=".json,application/json" hidden>
+    <p class="hint" id="c-importstat" style="margin:7px 0 4px"></p>
     <p class="cat-h">過去の直しを持ち越す</p>
     <p class="hint" style="margin:0 0 10px">同じ作品の「直す前」と「直した後」（納品稿と刊行版など）を入れると、文の単位で突き合わせて、朱入れの中で直したのと同じ材料にします。作品をまたいで効くので、新しい原稿の一行目から先回りします。この端末の中だけに置かれ、どこにも送りません。</p>
     <div class="field"><label for="m-title">作品名</label><input id="m-title" placeholder="端境の潜熱"></div>
@@ -464,7 +473,7 @@ const mem={};
 function jget(k){ if(k in mem) return mem[k];
   try{ const v=localStorage.getItem(k); const o=v?JSON.parse(v):null; if(o!==null) mem[k]=o; return o; }
   catch(e){ return null; } }
-function jset(k,v){ mem[k]=v;
+function jset(k,v){ mem[k]=v; syncSchedule(k);
   try{ localStorage.setItem(k,JSON.stringify(v)); return true; }
   catch(e){ toast("この端末に保存できませんでした。開いている間だけ残ります"); return false; } }
 function jdel(k){ delete mem[k]; try{ localStorage.removeItem(k); }catch(e){} }
@@ -949,8 +958,18 @@ function saveWork(now){
   clearTimeout(saveT);
   if(now) flushWork(); else saveT=setTimeout(flushWork,500);
 }
+const blockStr={};
+function stampWork(w){                   /* 変わった区切りと作品に、いつ変わったかの印を付ける（揃えるときの勝ち負けに使う） */
+  const now=Date.now();
+  const cache=blockStr[w.id]||(blockStr[w.id]={rows:[],meta:null,init:false});
+  w.blocks.forEach((b,i)=>{ const st=JSON.stringify(bodyOfBlock(b)); if(cache.rows[i]!==st){ cache.rows[i]=st; if(cache.init) b.at=now; } });
+  cache.rows.length=w.blocks.length;
+  const ms=JSON.stringify(bodyOfWork(w)); if(cache.meta!==ms){ if(cache.init) w.at=now; cache.meta=ms; }
+  cache.init=true;
+}
 function flushWork(){
   clearTimeout(saveT); if(!cur) return;
+  stampWork(cur);
   jset("shuire:work:"+curId,cur);
   const w=index.find(x=>x.id===curId);
   if(w){ w.done=cur.blocks.filter(b=>b.done).length; w.total=cur.blocks.length; w.pass=cur.pass; w.kind=cur.kind; w.title=cur.title; w.due=cur.due||null; w.closed=!!cur.closed; jset(K_INDEX,index); }
@@ -1194,6 +1213,7 @@ function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rule
   if(!conf.quota) conf.quota=3;
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
   loadDir(); loadMemory(); warmHost();
+  if(conf.sync&&canSync()) hostDbWarm().then(db=>{ if(db) startSync(db); else { syncState="error"; renderSyncStat(); } });
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
 })();
@@ -1404,7 +1424,7 @@ async function wordSnapshot(force){
     else if(how==="download") toast("控えを書き出しました");
   }catch(e){ toast("控えの書き出しに失敗しました"); }
 }
-function saveText(t,name){ save(new TextEncoder().encode("﻿"+t),name,"text/plain;charset=utf-8"); }
+function saveText(t,name){ const j=/\.json$/i.test(name); save(new TextEncoder().encode((j?"":"\ufeff")+t),name,j?"application/json":"text/plain;charset=utf-8"); }
 function headParas(sub){
   return [para([{t:cur.title,b:true,sz:30}],true),
           para([{t:jdate()+"　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）　"+sub,sz:18,color:GRAY}])];
@@ -1923,6 +1943,190 @@ function harvestText(){
   return out;
 }
 
+/* ============================================================
+   iPhone と PC で揃える（claude.ai の保管庫）
+   書き手が設定で選んだときだけ使う。置き場：
+   settings/conf, settings/daily, memory/<k>, works/<id>, works/<id>/blocks/<i>, works/<id>/log/<k>
+   どの書類にも at（いつ書いたか）を付け、新しいほうが勝つ。直しの履歴と持ち越しは足し合わせる。
+   ============================================================ */
+let syncDb=null, syncOn=false, syncMute=false, syncUnsubs=[], pushed={}, pushedAt={}, pushedNb={}, pushedRev={}, syncAt=0, syncState="off", syncT=null, syncQueue={};
+const SYNC_CHUNK=400;
+const canSync=()=>!!(window.claude&&typeof window.claude.use==="function");
+function hostDbWarm(){ try{ if(canSync()) return window.claude.use("db").catch(()=>null); }catch(e){} return Promise.resolve(null); }
+const strip=o=>{ const c=Object.assign({},o); delete c.at; delete c.rev; return JSON.stringify(c); };
+function bodyOfBlock(b){ return {t:b.t,done:!!b.done,note:b.note||"",marks:b.marks||[],fusen:b.fusen||[],edits:b.edits||{},advice:b.advice||{},fmemo:b.fmemo||{},ftags:b.ftags||{},wide:b.wide||{on:false,memo:"",tags:[]},head:!!b.head}; }
+const WORK_META=["id","title","created","size","pass","kind","history","world","r18","moreSkills","due","closed","closedAt","talk","wordAt","wordDone"];
+function bodyOfWork(w){ const o={}; WORK_META.forEach(k=>{ if(w[k]!==undefined&&w[k]!==null) o[k]=w[k]; }); o.nb=w.blocks.length; o.nl=Math.max(1,Math.ceil((w.log||[]).length/SYNC_CHUNK)); return o; }
+function confBody(){ const c=Object.assign({},conf); delete c.sync; delete c.last; return c; }
+function chunks(arr){ const out=[]; for(let k=0;k<Math.max(1,Math.ceil(arr.length/SYNC_CHUNK));k++) out.push(arr.slice(k*SYNC_CHUNK,(k+1)*SYNC_CHUNK)); return out; }
+function unionBy(a,b,key){ const seen={}, out=[]; a.concat(b).forEach(x=>{ const k=key(x); if(seen[k]) return; seen[k]=1; out.push(x); }); return out; }
+const unionLog=(a,b)=>unionBy(a,b,x=>JSON.stringify([x.at,x.b,x.i,x.o,x.n])).sort((x,y)=>(x.at||0)-(y.at||0));
+const unionMemory=(a,b)=>unionBy(a,b,x=>JSON.stringify([x.w,x.o,x.n]));
+function ensureIndex(w){
+  let e=index.find(x=>x.id===w.id);
+  if(!e){ e={id:w.id}; index.unshift(e); }
+  e.title=w.title; e.done=w.blocks.filter(b=>b.done).length; e.total=w.blocks.length; e.pass=w.pass; e.kind=w.kind; e.due=w.due||null; e.closed=!!w.closed;
+  quiet(()=>jset(K_INDEX,index));
+}
+function quiet(fn){ const m=syncMute; syncMute=true; try{ return fn(); } finally{ syncMute=m; } }
+
+async function setDoc(path,body,owner,force){
+  const st=strip(body), same=pushed[path]===st; if(same&&!force) return false;
+  let at=(owner&&owner.at)||0;                             /* 直した時刻をそのまま持っていく（押した時刻ではなく） */
+  if(!same && at<=(pushedAt[path]||0)) at=Date.now();      /* 中身が変わったのに印が古いなら、いま */
+  if(!at) at=Date.now();
+  await syncDb.doc(path).set(Object.assign({},body,{at:at}));
+  pushed[path]=st; pushedAt[path]=at; if(owner) owner.at=at; return true;
+}
+async function runJobs(jobs){
+  for(let i=0;i<jobs.length;i+=4) await Promise.all(jobs.slice(i,i+4).map(j=>setDoc(j[0],j[1],j[2]).catch(()=>{ syncState="error"; })));
+}
+async function pushWork(w){
+  if(!syncDb||!syncOn||!w) return;
+  const id=w.id, jobs=[];
+  w.blocks.forEach((b,i)=>jobs.push(["works/"+id+"/blocks/"+i, bodyOfBlock(b), b]));
+  chunks(w.log||[]).forEach((c,k)=>jobs.push(["works/"+id+"/log/"+k, {items:c}, null]));
+  const dirty=jobs.some(j=>pushed[j[0]]!==strip(j[1]));
+  const wb=bodyOfWork(w);
+  await runJobs(jobs);                                     /* 区切りと履歴を先に置き、表紙はいちばん最後（相手はこれを合図に読みに来る） */
+  if(dirty||pushed["works/"+id]!==strip(wb)){ wb.rev=Date.now(); pushedRev[id]=wb.rev; try{ await setDoc("works/"+id, wb, w, true); }catch(e){ syncState="error"; } }
+  const prevNb=pushedNb[id]||0;
+  for(let i=w.blocks.length;i<prevNb;i++){ try{ await syncDb.doc("works/"+id+"/blocks/"+i).delete(); }catch(e){} delete pushed["works/"+id+"/blocks/"+i]; }
+  pushedNb[id]=w.blocks.length;
+  syncAt=Date.now(); if(syncState!=="error") syncState="ok"; renderSyncStat();
+}
+async function pullWork(id){
+  const wd=await syncDb.doc("works/"+id).get(); if(!wd.exists) return null;
+  const m=wd.data(); if(!m) return null;
+  const local=jget("shuire:work:"+id);
+  const w= local || {v:2,id:id,blocks:[],log:[],history:[]};
+  let changed=false;
+  if(!local || (m.at||0)>(w.at||0)){ WORK_META.forEach(k=>{ if(m[k]!==undefined) w[k]=m[k]; }); w.at=m.at||0; changed=true; }
+  pushed["works/"+id]=strip(m); pushedAt["works/"+id]=m.at||0; if(m.rev) pushedRev[id]=m.rev;
+  const bs=await syncDb.collection("works/"+id+"/blocks").limit(1000).get();
+  const byId={}; bs.docs.forEach(d=>{ if(d.exists) byId[d.id]=d.data(); });
+  const nb=m.nb||0, blocks=[];
+  for(let i=0;i<nb;i++){
+    const r=byId[String(i)], lb=w.blocks[i], path="works/"+id+"/blocks/"+i;
+    if(r){ pushed[path]=strip(r); pushedAt[path]=r.at||0; if(!lb || (r.at||0)>(lb.at||0)){ const nbk=Object.assign({},r); nbk.at=r.at||0; delete nbk.rev; blocks.push(nbk); changed=true; } else blocks.push(lb); }
+    else if(lb) blocks.push(lb);
+  }
+  if(nb) w.blocks=blocks;
+  const ls=await syncDb.collection("works/"+id+"/log").limit(1000).get();
+  let rlog=[]; ls.docs.forEach(d=>{ if(d.exists){ const it=d.data().items||[]; rlog=rlog.concat(it); pushed["works/"+id+"/log/"+d.id]=strip({items:it}); } });
+  const merged=unionLog(w.log||[],rlog); if(merged.length!==(w.log||[]).length) changed=true; w.log=merged;
+  migrate(w);
+  if(cur&&curId===id&&cur!==w){ cur=w; }
+  quiet(()=>{ jset("shuire:work:"+id,w); ensureIndex(w); });
+  pushedNb[id]=w.blocks.length;
+  if(changed){ const c=blockStr[id]; if(c){ c.rows=w.blocks.map(b=>JSON.stringify(bodyOfBlock(b))); c.meta=JSON.stringify(bodyOfWork(w)); } }
+  return changed? w : null;
+}
+async function pullSettings(){
+  try{ const c=await syncDb.doc("settings/conf").get(); if(c.exists){ const r=c.data(); if((r.at||0)>(conf.at||0)){ const keep={sync:conf.sync,last:conf.last}; Object.assign(conf,r,keep); pushed["settings/conf"]=strip(r); pushedAt["settings/conf"]=r.at||0; quiet(()=>jset(K_CONF,conf)); } } }catch(e){}
+  try{ const d=await syncDb.doc("settings/daily").get(); if(d.exists){ const r=d.data().d||{}; Object.keys(r).forEach(k=>{ daily[k]=Math.max(daily[k]||0,r[k]||0); }); quiet(()=>jset(K_DAILY,daily)); } }catch(e){}
+  try{ const ms=await syncDb.collection("memory").limit(1000).get(); let rm=[]; ms.docs.forEach(d=>{ if(d.exists){ const it=d.data().items||[]; rm=rm.concat(it); pushed["memory/"+d.id]=strip({items:it}); } }); if(rm.length){ memory=unionMemory(memory,rm); quiet(()=>saveMemory()); } }catch(e){}
+}
+async function pullAll(){
+  const snap=await syncDb.collection("works").limit(1000).get();
+  for(const d of snap.docs){ const m=d.data(); if(!m||!m.id) continue; try{ await pullWork(m.id); }catch(e){ syncState="error"; } }
+}
+function subscribeAll(){
+  syncUnsubs.forEach(u=>{ try{ u(); }catch(e){} }); syncUnsubs=[];
+  syncUnsubs.push(syncDb.collection("works").onSnapshot(async snap=>{
+    for(const ch of snap.docChanges()){
+      const m=ch.doc.data()||{}, id=m.id||ch.doc.id;
+      if(ch.type==="removed"){
+        if(jget("shuire:work:"+id)){ quiet(()=>{ jdel("shuire:work:"+id); index=index.filter(x=>x.id!==id); jset(K_INDEX,index); });
+          if(curId===id){ cur=null; curId=null; renderHome(); view("home"); toast("もう片方で消された原稿を、こちらでも外しました"); } else refreshViews(); }
+        continue;
+      }
+      if(m.rev&&pushedRev[id]===m.rev) continue;            /* 自分が置いたぶん */
+      try{ const w=await pullWork(id); if(w) refreshViews(); }catch(e){}
+    }
+  }, ()=>{ syncState="error"; renderSyncStat(); }));
+  syncUnsubs.push(syncDb.doc("settings/conf").onSnapshot(snap=>{ if(!snap.exists) return; const r=snap.data(); if(pushed["settings/conf"]===strip(r)) return; if((r.at||0)>(conf.at||0)){ const keep={sync:conf.sync,last:conf.last}; Object.assign(conf,r,keep); pushed["settings/conf"]=strip(r); pushedAt["settings/conf"]=r.at||0; quiet(()=>jset(K_CONF,conf)); if(cur){ buildMine(); penCache=readWork(cur,kindOf(cur.kind).cats); } refreshViews(); } }));
+  syncUnsubs.push(syncDb.doc("settings/daily").onSnapshot(snap=>{ if(!snap.exists) return; const r=snap.data().d||{}; let ch=false; Object.keys(r).forEach(k=>{ if((r[k]||0)>(daily[k]||0)){ daily[k]=r[k]; ch=true; } }); if(ch){ quiet(()=>jset(K_DAILY,daily)); refreshViews(); } }));
+  syncUnsubs.push(syncDb.collection("memory").onSnapshot(snap=>{ let rm=[], mine=true; snap.docs.forEach(d=>{ if(!d.exists) return; const it=d.data().items||[]; if(pushed["memory/"+d.id]!==strip({items:it})) mine=false; rm=rm.concat(it); }); if(mine) return; const before=memory.length; memory=unionMemory(memory,rm); if(memory.length!==before){ quiet(()=>saveMemory()); if(cur){ buildMine(); penCache=readWork(cur,kindOf(cur.kind).cats); } refreshViews(); } }));
+}
+function refreshViews(){
+  try{
+    if(!$("v-home").classList.contains("hide")) renderHome();
+    else if(cur && !$("v-work").classList.contains("hide")) renderWork();
+    else if(cur && !$("v-read").classList.contains("hide")) openBlock(Math.min(pos,cur.blocks.length-1), sheetK>=0?sheetK:undefined);
+    else if(cur && !$("v-report").classList.contains("hide")) renderReport();
+  }catch(e){}
+  renderSyncStat();
+}
+function syncSchedule(k){
+  if(!syncOn||syncMute) return;
+  if(k===K_INDEX) return;
+  syncQueue[k]=1; clearTimeout(syncT); syncT=setTimeout(syncFlush,1500);
+}
+async function syncFlush(){
+  clearTimeout(syncT); if(!syncDb||!syncOn) return;
+  const q=syncQueue; syncQueue={};
+  for(const k of Object.keys(q)){
+    try{
+      if(k===K_CONF) await setDoc("settings/conf",confBody(),conf);
+      else if(k===K_DAILY) await setDoc("settings/daily",{d:daily},null);
+      else if(k===K_MEMORY) await runJobs(chunks(memory).map((c,i)=>["memory/"+i,{items:c},null]));
+      else if(k.indexOf("shuire:work:")===0){ const id=k.slice(12); const w=(cur&&curId===id)?cur:jget(k); if(w){ stampWork(w); await pushWork(w); } }
+    }catch(e){ syncState="error"; }
+  }
+  renderSyncStat();
+}
+async function syncDeleteWork(id,nb){
+  if(!syncDb||!syncOn) return;
+  try{ await syncDb.doc("works/"+id).delete(); for(let i=0;i<(nb||0);i++) await syncDb.doc("works/"+id+"/blocks/"+i).delete(); for(let k=0;k<10;k++) await syncDb.doc("works/"+id+"/log/"+k).delete(); }catch(e){}
+}
+async function startSync(db){
+  if(!db) return false;
+  syncDb=db; syncOn=true; syncState="pulling"; renderSyncStat();
+  try{
+    if(cur) flushWork();
+    await pullSettings(); await pullAll();
+    for(const e of index.slice()){ const w=jget("shuire:work:"+e.id); if(w){ stampWork(w); await pushWork(w); } }
+    await setDoc("settings/conf",confBody(),conf); await setDoc("settings/daily",{d:daily},null);
+    await runJobs(chunks(memory).map((c,i)=>["memory/"+i,{items:c},null]));
+    subscribeAll();
+    syncState="ok"; syncAt=Date.now();
+  }catch(e){ syncState="error"; }
+  if(cur){ buildMine(); penCache=readWork(cur,kindOf(cur.kind).cats); }
+  refreshViews();
+  return syncState==="ok";
+}
+function stopSync(){ syncUnsubs.forEach(u=>{ try{ u(); }catch(e){} }); syncUnsubs=[]; syncOn=false; syncDb=null; syncState="off"; renderSyncStat(); }
+function renderSyncStat(){
+  const el=$("c-syncstat"); if(!el) return;
+  el.textContent = !canSync()? "ファイルを直接開いているときは使えません。公開したページで開いたときに点けられます。"
+    : syncState==="off"? (conf.sync? "保管庫につないでいます…" : "いまはこの端末の中だけです。")
+    : syncState==="pulling"? "揃えています…"
+    : syncState==="error"? "保管庫と揃えられませんでした。少し待って「いますぐ揃える」を押してください。"
+    : "揃っています　"+(syncAt? new Date(syncAt).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"}) : "");
+  const b=$("c-sync"); if(b){ b.classList.toggle("on",!!conf.sync); b.disabled=!canSync(); b.style.opacity=canSync()?"1":".5"; }
+}
+
+/* ---- 持ち出し・持ち込み（通信を使わずに運ぶ） ---- */
+function bundle(){ return {kind:"shuire",v:2,at:Date.now(),conf:confBody(),daily:daily,memory:memory,works:index.map(w=>jget("shuire:work:"+w.id)).filter(Boolean)}; }
+function importBundle(o){
+  if(!o||o.kind!=="shuire"||!Array.isArray(o.works)) throw new Error("朱入れの持ち出しファイルではありません");
+  let added=0, updated=0, kept=0;
+  o.works.forEach(w=>{
+    if(!w||!w.id) return;
+    migrate(w); if(!w.at) w.at=o.at||0;
+    const local=jget("shuire:work:"+w.id);
+    if(!local){ jset("shuire:work:"+w.id,w); ensureIndex(w); added++; }
+    else if((w.at||0)>(local.at||0)){ jset("shuire:work:"+w.id,w); ensureIndex(w); if(curId===w.id){ cur=w; } updated++; }
+    else kept++;
+  });
+  if(Array.isArray(o.memory)){ memory=unionMemory(memory,o.memory); saveMemory(); }
+  if(o.daily){ Object.keys(o.daily).forEach(k=>{ daily[k]=Math.max(daily[k]||0,o.daily[k]||0); }); jset(K_DAILY,daily); }
+  jset(K_INDEX,index);
+  if(cur){ buildMine(); penCache=readWork(cur,kindOf(cur.kind).cats); }
+  return {added:added,updated:updated,kept:kept};
+}
+
 /* ---- 過去の直しの持ち越し（作品をまたぐ材料） ---- */
 function loadMemory(){ memory=jget(K_MEMORY)||[]; }
 function saveMemory(){ if(memory.length>4000) memory=memory.slice(memory.length-4000); jset(K_MEMORY,memory); }
@@ -2183,7 +2387,7 @@ function renderConf(){
   $("c-when").querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ conf.wordWhen=b.dataset.w; saveConf(); renderConf(); });
   $("c-mine").classList.toggle("on",conf.mine!==false);
   $("c-pen").classList.toggle("on",conf.pen===true);
-  renderMemList(); memStat();
+  renderMemList(); memStat(); renderSyncStat();
   $("c-dir").classList.toggle("hide",!canDir());
   $("c-dirstat").textContent = !canDir()
     ? "この端末ではフォルダを選べません。控えはいつもの場所へダウンロードされ、同じ名前のファイルが増えていきます。"
@@ -2299,6 +2503,32 @@ $("m-memo-go").onclick=()=>{
     ? r.pairs.length+"行から"+n+"件を持ち越しました"+(r.skipped.length? "　読めなかった行 "+r.skipped.length+"："+r.skipped.slice(0,3).map(x=>x.trim()).join("／") : "")
     : "読める行がありませんでした。「A → B」か「A を削除」の形で一行ずつ書いてください";
   if(n){ $("m-memo").value=""; renderMemList(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats); toast(n+"件の直しを持ち越しました"); }
+};
+$("c-sync").onclick=async()=>{
+  if(!canSync()) return;
+  if(conf.sync){ conf.sync=false; saveConf(); stopSync(); toast("これからはこの端末の中だけです。保管庫に置いた分は残っています"); renderConf(); return; }
+  if(!await ask("原稿と朱がこの端末の外——あなたのアカウントだけに見える claude.ai の保管庫——に置かれます。同じページを開いた iPhone と PC で揃います。このページは誰にも共有しないでください。",{ok:"置いて揃える"})) return;
+  conf.sync=true; saveConf(); renderConf();
+  const db=await hostDbWarm();
+  if(!db){ conf.sync=false; saveConf(); syncState="error"; renderSyncStat(); toast("保管庫が使えませんでした"); return; }
+  const ok=await startSync(db);
+  toast(ok? "揃えました" : "揃えられませんでした");
+  renderConf();
+};
+$("c-syncnow").onclick=async()=>{
+  if(!conf.sync||!canSync()){ toast("先に「保管庫に置いて揃える」を点けてください"); return; }
+  const db=syncDb||await hostDbWarm(); if(!db){ toast("保管庫が使えませんでした"); return; }
+  const ok=await startSync(db); toast(ok? "揃えました" : "揃えられませんでした");
+};
+$("c-export").onclick=()=>{ if(cur) flushWork(); saveText(JSON.stringify(bundle()),"朱入れ_持ち出し_"+stamp()+".json"); };
+$("c-import").onclick=()=>$("c-importfile").click();
+$("c-importfile").onchange=async e=>{
+  const f=e.target.files&&e.target.files[0]; if(!f) return;
+  try{ const r=importBundle(JSON.parse(await f.text()));
+    $("c-importstat").textContent="持ち込みました　新しく "+r.added+"／更新 "+r.updated+"／そのまま "+r.kept;
+    toast("持ち込みました"); }
+  catch(err){ $("c-importstat").textContent=(err&&err.message)||"持ち込めませんでした"; }
+  e.target.value="";
 };
 $("c-pen").onclick=()=>{ conf.pen=conf.pen!==true; saveConf(); renderConf(); };
 $("c-mine").onclick=()=>{ conf.mine=conf.mine===false; saveConf(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats); renderConf(); };
@@ -2432,8 +2662,10 @@ $("btn-close").onclick=async()=>{
   if(cur.closed){ $("w-sheet").classList.add("finished"); toast("校了。"+cur.pass+"回通しました"); }
 };
 $("btn-del").onclick=async()=>{
-  if(!await ask("「"+cur.title+"」を本文ごと消しますか。元に戻せません。",{ok:"消す"})) return;
+  if(!await ask("「"+cur.title+"」を本文ごと消しますか。元に戻せません。"+(syncOn?"\n保管庫からも消えます。":""),{ok:"消す"})) return;
+  const delId=curId, delNb=cur.blocks.length;
   jdel("shuire:work:"+curId);
+  syncDeleteWork(delId,delNb);
   index=index.filter(w=>w.id!==curId); jset(K_INDEX,index);
   cur=null; curId=null; renderHome(); view("home"); toast("消しました");
 };

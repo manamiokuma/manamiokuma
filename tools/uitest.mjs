@@ -690,8 +690,41 @@ await step("執筆に持っていく一枚を書き出せる", async () => {
   must(body.includes("出自：朱入れ") && body.includes("旧作"), "出自がない");
   must(body.includes("「白く」を書かない"), "避けることが書かれていない: " + body.slice(0, 200));
 });
-await step("画面の絵を撮る", async () => {
+await step("揃える切り替えは、ファイルで開いているときは使えない", async () => {
   await p.click("#o-back");
+  await p.click("#btn-conf2");
+  must(await p.locator("#c-sync").isDisabled(), "枠の外なのに押せる");
+  must((await p.textContent("#c-syncstat")).includes("公開したページ"), "説明が違う: " + (await p.textContent("#c-syncstat")));
+});
+let 持ち出し = "";
+await step("持ち出すと、原稿と持ち越しが一枚の JSON になる", async () => {
+  const dl = p.waitForEvent("download");
+  await p.click("#c-export");
+  const d = await dl;
+  must(d.suggestedFilename().startsWith("朱入れ_持ち出し_") && d.suggestedFilename().endsWith(".json"), "名前が違う: " + d.suggestedFilename());
+  const st = await d.createReadStream();
+  for await (const c of st) 持ち出し += c;
+  const o = JSON.parse(持ち出し);
+  must(o.kind === "shuire" && o.works.length >= 1, "中身が違う");
+  must(o.works.some(w => w.title === "人形の部屋"), "原稿が入っていない");
+  must(Array.isArray(o.memory) && o.memory.length > 0, "持ち越しが入っていない");
+});
+await step("同じものを持ち込むと「そのまま」、ほかの端末の原稿なら新しく入る", async () => {
+  await p.locator("#c-importfile").setInputFiles({ name: "a.json", mimeType: "application/json", buffer: Buffer.from(持ち出し) });
+  await p.locator("#c-importstat").filter({ hasText: "持ち込みました" }).waitFor({ timeout: 3000 });
+  must((await p.textContent("#c-importstat")).includes("そのまま 1"), "同じ原稿を上書きした: " + (await p.textContent("#c-importstat")));
+  const o = JSON.parse(持ち出し);
+  o.works = [Object.assign({}, o.works[0], { id: "other-1", title: "ほかの端末の原稿", at: Date.now() })];
+  await p.locator("#c-importfile").setInputFiles({ name: "b.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(o)) });
+  await p.locator("#c-importstat").filter({ hasText: "新しく 1" }).waitFor({ timeout: 3000 });
+  await p.locator("#c-importfile").setInputFiles({ name: "c.json", mimeType: "application/json", buffer: Buffer.from("{\"kind\":\"x\"}") });
+  await p.locator("#c-importstat").filter({ hasText: "ではありません" }).waitFor({ timeout: 3000 });
+  await p.click("#c-back");
+  await p.click("#btn-back");
+  must((await p.textContent("#worklist")).includes("ほかの端末の原稿"), "持ち込んだ原稿が一覧に出ない");
+  await p.locator("#worklist .work", { hasText: "人形の部屋" }).first().click();
+});
+await step("画面の絵を撮る", async () => {
   await p.screenshot({ path: "tools/tmp-work.png" });
   await p.click("#btn-go");
   await p.screenshot({ path: "tools/tmp-read.png" });

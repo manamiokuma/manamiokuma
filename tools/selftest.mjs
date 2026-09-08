@@ -9,8 +9,7 @@ import path from "node:path";
 const html = fs.readFileSync(new URL("../shuire.html", import.meta.url), "utf8");
 const src = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"));
 
-/* ---- 偽のDOM ---- */
-const els = new Map();
+/* ---- 偽のDOM（端末ひとつぶん） ---- */
 const mkEl = () => ({
   innerHTML: "", textContent: "", value: "", className: "", dataset: {}, style: {},
   classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
@@ -18,29 +17,61 @@ const mkEl = () => ({
   addEventListener(){}, focus(){}, setSelectionRange(){}, getBoundingClientRect(){ return { top: 0 }; },
   appendChild(){}, remove(){}, click(){}
 });
-const store = new Map();
-const ctx = {
-  console, TextEncoder, TextDecoder, Blob, Response, URL, Date, Math, JSON,
-  setTimeout, clearTimeout, navigator: { clipboard: { writeText: async () => {} } },
-  document: {
-    getElementById(id){ if(!els.has(id)) els.set(id, mkEl()); return els.get(id); },
-    createElement(){ return mkEl(); },
-    body: mkEl(),
-    addEventListener(){}
-  },
-  localStorage: {
-    getItem: k => (store.has(k) ? store.get(k) : null),
-    setItem: (k, v) => store.set(k, v),
-    removeItem: k => store.delete(k)
-  }
-};
-ctx.window = ctx;
-ctx.globalThis = ctx;
-ctx.window.scrollTo = () => {};
-ctx.window.scrollY = 0;
-ctx.window.addEventListener = () => {};
-vm.createContext(ctx);
-vm.runInContext(src, ctx, { filename: "shuire.html" });
+function makeCtx(){
+  const els = new Map();
+  const store = new Map();
+  const c = {
+    console, TextEncoder, TextDecoder, Blob, Response, URL, Date, Math, JSON,
+    setTimeout, clearTimeout, navigator: { clipboard: { writeText: async () => {} } },
+    document: {
+      getElementById(id){ if(!els.has(id)) els.set(id, mkEl()); return els.get(id); },
+      createElement(){ return mkEl(); },
+      body: mkEl(),
+      addEventListener(){}
+    },
+    localStorage: {
+      getItem: k => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, v),
+      removeItem: k => store.delete(k)
+    }
+  };
+  c.window = c; c.globalThis = c;
+  c.window.scrollTo = () => {}; c.window.scrollY = 0; c.window.addEventListener = () => {};
+  vm.createContext(c);
+  vm.runInContext(src, c, { filename: "shuire.html" });
+  c.__store = store;
+  return c;
+}
+const ctx = makeCtx();
+
+/* ---- 偽の保管庫（claude.ai の db のふるまいを机の上で真似る。二つの端末で共有する） ---- */
+function fakeDb(){
+  const docs = new Map(), subs = [];
+  const parent = p => p.slice(0, p.lastIndexOf("/"));
+  const copy = o => JSON.parse(JSON.stringify(o));
+  const snap = p => ({ id: p.slice(p.lastIndexOf("/") + 1), exists: docs.has(p), data: () => docs.has(p) ? copy(docs.get(p)) : undefined });
+  const inCol = col => [...docs.keys()].filter(p => parent(p) === col).sort().map(snap);
+  const qs = (col, changes) => ({ docs: inCol(col), size: inCol(col).length, empty: !inCol(col).length, docChanges: () => changes });
+  const notify = (p, type) => subs.slice().forEach(l => {
+    if (l.kind === "doc" && l.path === p) l.fn(snap(p));
+    else if (l.kind === "col" && l.path === parent(p)) l.fn(qs(l.path, [{ type, doc: snap(p) }]));
+  });
+  const unsub = l => () => { const i = subs.indexOf(l); if (i >= 0) subs.splice(i, 1); };
+  const doc = p => ({
+    async get(){ return snap(p); },
+    async set(d){ const type = docs.has(p) ? "modified" : "added"; docs.set(p, copy(d)); notify(p, type); },
+    async update(d){ docs.set(p, Object.assign(docs.get(p) || {}, copy(d))); notify(p, "modified"); },
+    async delete(){ if(!docs.has(p)) return; docs.delete(p); notify(p, "removed"); },
+    onSnapshot(fn){ const l = { kind: "doc", path: p, fn }; subs.push(l); setTimeout(() => { if (subs.includes(l)) fn(snap(p)); }, 0); return unsub(l); }
+  });
+  const collection = p => ({
+    limit(){ return this; }, where(){ return this; }, orderBy(){ return this; },
+    async get(){ return qs(p, []); },
+    onSnapshot(fn){ const l = { kind: "col", path: p, fn }; subs.push(l); setTimeout(() => { if (subs.includes(l)) fn(qs(p, inCol(p).map(d => ({ type: "added", doc: d })))); }, 0); return unsub(l); }
+  });
+  return { doc, collection, __docs: docs };
+}
+const tick = (ms = 30) => new Promise(r => setTimeout(r, ms));
 
 /* ---- 点検の道具 ---- */
 let ok = 0, ng = 0;
@@ -592,6 +623,89 @@ await run("きょうの分は、締め切りのある原稿から逆算される
   eq(ev("todayNeed()"), 3, "締め切りがなければ決めた数のまま");
   ev(`index = []; daily = {}`);
 });
+
+console.log("\niPhone と PC で揃える（偽の保管庫）");
+const 庫 = fakeDb();
+const A = makeCtx(), B = makeCtx();
+const evA = e => vm.runInContext(e, A), evB = e => vm.runInContext(e, B);
+const 原稿 = "　第一章　朝\n\n　朝が来た。光が来た。\n\n　第二章　夜\n\n　夜が来た。星が出た。";
+await run("Aで作った原稿が保管庫に置かれる", async () => {
+  evA(`cur={v:2,id:"w1",title:"朝と夜",created:1,size:2200,blocks:cutBlocks(${JSON.stringify(原稿)},2200),pass:1,kind:"typo",log:[],history:[],world:"none",r18:true,moreSkills:""}; curId="w1";
+       index=[{id:"w1",title:"朝と夜",done:0,total:cur.blocks.length,pass:1,kind:"typo"}]; jset(K_INDEX,index); jset("shuire:work:w1",cur);`);
+  A.__db = 庫; const ok = await evA("startSync(__db)");
+  truthy(ok, "揃えられなかった: " + evA("syncState"));
+  truthy(庫.__docs.has("works/w1"), "表紙が置かれていない");
+  eq(庫.__docs.get("works/w1").nb, 2, "区切りの数");
+  truthy(庫.__docs.has("works/w1/blocks/0") && 庫.__docs.has("works/w1/blocks/1"), "区切りが置かれていない");
+});
+await run("Bで点けると、その原稿が降りてくる", async () => {
+  B.__db = 庫; const ok = await evB("startSync(__db)");
+  truthy(ok, "揃えられなかった: " + evB("syncState"));
+  eq(evB('index.length'), 1, "一覧に載っていない");
+  eq(evB('index[0].title'), "朝と夜");
+  eq(evB('workText(jget("shuire:work:w1"))'), evA("workText(cur)"), "本文が一致しない");
+});
+await tick();
+await run("Aで朱を入れると、Bにも届く", async () => {
+  evA(`cur.blocks[0].edits[2]="　朝が来た。光が差した。"; cur.blocks[0].marks=[2]; cur.log.push({p:1,k:2,b:0,i:2,o:"　朝が来た。光が来た。",n:"　朝が来た。光が差した。",at:Date.now()}); flushWork();`);
+  await evA("syncFlush()"); await tick();
+  eq(evB('jget("shuire:work:w1").blocks[0].edits[2]'), "　朝が来た。光が差した。", "直しが届いていない");
+  eq(evB('jget("shuire:work:w1").log.length'), 1, "履歴が届いていない");
+});
+await run("Bで別の区切りを直すと、Aの直しを消さずに合わさる", async () => {
+  evB(`cur=jget("shuire:work:w1"); curId="w1"; cur.blocks[1].edits[2]="　夜が来た。星が瞬いた。"; cur.log.push({p:1,k:2,b:1,i:2,o:"　夜が来た。星が出た。",n:"　夜が来た。星が瞬いた。",at:Date.now()+1}); flushWork();`);
+  await evB("syncFlush()"); await tick();
+  eq(evA('cur.blocks[1].edits[2]'), "　夜が来た。星が瞬いた。", "Bの直しがAに届いていない");
+  eq(evA('cur.blocks[0].edits[2]'), "　朝が来た。光が差した。", "Aの直しが消えた");
+  eq(evA('cur.log.length'), 2, "履歴が足し合わさっていない");
+  eq(evB('cur.log.length'), 2, "Bの履歴");
+});
+await run("同じ区切りを両方で直したら、あとで直したほうが残る", async () => {
+  evA(`cur.blocks[0].edits[2]="　朝が来た。古いほう。"; flushWork();`);
+  await tick(5);                                   /* Bのほうが確かにあとで直す */
+  evB(`cur.blocks[0].edits[2]="　朝が来た。新しいほう。"; flushWork();`);
+  await evA("syncFlush()"); await tick(); await evB("syncFlush()"); await tick();
+  eq(evA('cur.blocks[0].edits[2]'), "　朝が来た。新しいほう。", "Aに新しいほうが残っていない");
+  eq(evB('cur.blocks[0].edits[2]'), "　朝が来た。新しいほう。", "Bが古いほうに戻された");
+});
+await run("持ち越しは足し合わさり、きょうの数は多いほうが残る", async () => {
+  evA(`memory=[{o:"だった",n:"であった",w:"w1",at:1}]; saveMemory(); daily[ymd()]=3; jset(K_DAILY,daily);`);
+  evB(`memory=[{o:"のだ",n:"だ",w:"w1",at:2}]; saveMemory(); daily[ymd()]=5; jset(K_DAILY,daily);`);
+  await evA("syncFlush()"); await tick(); await evB("syncFlush()"); await tick(); await evA("syncFlush()"); await tick();
+  eq(evA("memory.length"), 2, "Aの持ち越し"); eq(evB("memory.length"), 2, "Bの持ち越し");
+  eq(evA("daily[ymd()]"), 5, "Aのきょうの数"); eq(evB("daily[ymd()]"), 5, "Bのきょうの数");
+});
+await run("設定は新しいほうが勝つが、揃える切り替え自体は運ばない", async () => {
+  evB(`conf.quota=7; conf.sync=true; saveConf();`);
+  await evB("syncFlush()"); await tick();
+  eq(evA("conf.quota"), 7, "きょうの分の設定が届いていない");
+  truthy(!evA("conf.sync"), "揃える切り替えまで運んでしまった");
+});
+await run("Aで原稿を消すと、Bからも消える", async () => {
+  evA(`jdel("shuire:work:w1"); index=index.filter(x=>x.id!=="w1"); jset(K_INDEX,index); cur=null; curId=null;`);
+  await evA('syncDeleteWork("w1",2)'); await tick();
+  eq(evB('jget("shuire:work:w1")'), null, "Bに原稿が残っている");
+  eq(evB("index.length"), 0, "Bの一覧に残っている");
+  truthy(!庫.__docs.has("works/w1/blocks/0"), "区切りが保管庫に残っている");
+});
+await run("切ると、それ以降は届かない", async () => {
+  evB("stopSync()");
+  evA(`cur={v:2,id:"w2",title:"別",created:1,size:2200,blocks:cutBlocks("　あ。い。う。え。お。",2200),pass:1,kind:"typo",log:[],history:[]}; curId="w2"; index.unshift({id:"w2",title:"別"}); jset(K_INDEX,index); jset("shuire:work:w2",cur);`);
+  await evA("syncFlush()"); await tick();
+  truthy(庫.__docs.has("works/w2"), "Aからは置かれるはず");
+  eq(evB('jget("shuire:work:w2")'), null, "切ったのに届いた");
+});
+await run("持ち出しファイルは、新しいほうだけ取り込む", () => {
+  const b = evA("bundle()");
+  eq(b.kind, "shuire"); eq(b.works.length, 1);
+  const r = evB(`importBundle(${JSON.stringify(b)})`);
+  eq(r.added, 1, "新しく入るはず"); eq(evB('jget("shuire:work:w2").title'), "別");
+  const r2 = evB(`importBundle(${JSON.stringify(b)})`);
+  eq(r2.kept, 1, "同じものは、そのまま");
+  let threw = false; try { evB('importBundle({kind:"x"})'); } catch (e) { threw = true; }
+  truthy(threw, "違うファイルを黙って受け入れた");
+});
+evA("stopSync()");
 
 console.log("\nWordの読み書き");
 await run("書き出したdocxを自分で読み戻せる", () => {
