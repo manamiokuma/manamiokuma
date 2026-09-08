@@ -1484,8 +1484,30 @@ function vNewEp(){
   var f=view.form||{};
   var h='<button class="back" data-act="back">‹ もどる</button>';
   h+='<section><h2>出しおわった話を登録する</h2>';
-  h+='<div class="note" style="padding:0 0 8px">もうpixivに出してある話を、あとから台帳に入れます。'+
-     '検査ずみ・予約ずみ・公開ずみの印が最初から立ちます。</div>';
+
+  /* 入ったものを、目のあるところに置く */
+  if(view.added&&view.added.length){
+    h+='<div class="banner ok" style="margin-bottom:12px"><b>'+view.added.length+'本を入れました。</b>'+
+       '　欄は次の一本のために空にしてあります（作品・時刻・区分はそのまま、日付は一日進みます）。</div>';
+    h+='<div style="border-left:3px solid var(--midori);padding-left:11px;margin-bottom:18px">';
+    view.added.slice().reverse().forEach(function(id){
+      var e=ep(id);if(!e)return;
+      var w=work(e.workId),d=dpart(e.scheduledAt);
+      h+='<button class="row" data-act="ep" data-id="'+e.id+'" style="border-bottom-color:var(--rule)">'+
+        '<span class="d">'+(d?'<b>'+md(d)+'</b>':"—")+'</span>'+
+        '<span class="body"><span class="t">'+esc(e.title)+'</span><span class="m">'+
+        (w?'<span>'+esc(w.title)+'</span>':"")+'<span class="tabular">'+num(e.chars)+'字</span>'+
+        (e.isR18?'<span class="r18">R-18</span>':"")+
+        '<span class="pill md">公開ずみ</span>'+
+        (e.pixivUrl?'<span>URLあり</span>':'<span class="pill shu">URL未入力</span>')+
+        '</span></span><span class="go">›</span></button>';
+    });
+    h+='</div>';
+  }else{
+    h+='<div class="note" style="padding:0 0 8px">もうpixivに出してある話を、あとから台帳に入れます。'+
+       '検査ずみ・予約ずみ・公開ずみの印が最初から立ちます。</div>';
+  }
+
   h+='<label class="field"><span>どの作品の話か</span><select id="neWork">'+
      '<option value="">（新しい作品として足す）</option>'+
      S.works.map(function(w){return '<option value="'+w.id+'"'+(f.workId===w.id?" selected":"")+'>'+esc(w.title)+'</option>'}).join("")+
@@ -1502,21 +1524,8 @@ function vNewEp(){
      '<label class="field half"><span>時刻</span><input id="neTime" type="time" value="'+esc(f.time||S.settings.time||"19:00")+'"></label></div>';
   h+='<label class="field"><span>pixivのURL</span><input id="neUrl" value="'+esc(f.url||"")+'" placeholder="https://www.pixiv.net/novel/show.php?id=..."></label>';
   h+='<button class="btn fill" data-act="new-ep-save">登録する</button>';
-  h+='<div class="hint">続けて登録できます。作品と日付はそのまま残り、日付は一日ずつ進みます。</div>';
-  if(view.added&&view.added.length){
-    h+='<section><h2>入れたもの<span class="n">'+view.added.length+'本</span></h2>';
-    view.added.slice().reverse().forEach(function(id){
-      var e=ep(id);if(!e)return;
-      var w=work(e.workId);
-      h+='<button class="row" data-act="ep" data-id="'+e.id+'">'+
-        '<span class="d">'+(dpart(e.scheduledAt)?md(dpart(e.scheduledAt)):"—")+'</span>'+
-        '<span class="body"><span class="t">'+esc(e.title)+'</span><span class="m">'+
-        (w?'<span>'+esc(w.title)+'</span>':"")+'<span class="tabular">'+num(e.chars)+'字</span>'+
-        (e.isR18?'<span class="r18">R-18</span>':"")+'<span class="pill md">公開ずみ</span>'+
-        '</span></span><span class="go">›</span></button>';
-    });
-    h+='</section>';
-  }
+  h+='<div class="hint">押すと、入れたものが<b>この節のいちばん上</b>に並びます。'+
+     'タイトル・字数・URLの欄は、次の一本のために空になります（消えたのではありません）。</div>';
   h+='</section>';
   return h;
 }
@@ -1838,7 +1847,7 @@ document.addEventListener("click",function(ev){
       date:dt?shift(dt,1):today(),time:tm,url:""};
     view.added=(view.added||[]).concat([ne.id]);
     save();render();clearBanner();
-    banner("「"+ne.title+"」を公開ずみで入れました。",false,"ok");
+    window.scrollTo(0,0);
     return;
   }
   if(act==="renumber"){
