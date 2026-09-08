@@ -219,6 +219,55 @@ await step("校了の印を押せる", async () => {
   await p.click("#btn-close");
   must(await p.locator(".seal").count() === 0, "校了を取り消せない");
 });
+await step("締め切りを決めるとノルマが変わる", async () => {
+  must(await vis("work"), "作品画面にいない");
+  must(await p.locator("#w-dueset").count() === 1, "締め切りを決めるボタンがない");
+  const 三日後 = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  await p.locator("#w-duein").evaluate((el, v) => {
+    el.value = v; el.dispatchEvent(new Event("change", { bubbles: true }));
+  }, 三日後);
+  await p.waitForTimeout(200);
+  const now = await p.textContent("#w-due");
+  must(now.includes("あと3日"), "残り日数が出ない: " + now);
+  must(/一日 \d+ 区切り/.test(now), "必要なペースが出ない: " + now);
+  must((await p.textContent("#w-eta")) === "", "締め切りがあるのに見通しも出ている");
+});
+await step("一覧が締め切りの帯に変わる", async () => {
+  await p.click("#btn-back");
+  const bar = await p.textContent(".duebar");
+  must(bar.includes("入稿まで あと3日"), "帯が出ない: " + bar);
+  must(bar.includes("きょうは") || bar.includes("きょうの分は済みました"), "きょうの見込みが出ない: " + bar);
+  must((await p.textContent("#worklist")).includes("入稿"), "一覧のカードに入稿日が出ない");
+  must(await p.locator("#home-quota .quota").count() === 0, "きょうの分の行が二重に出ている");
+  must(await p.locator("#btn-resume").count() === 0, "つづきの札が帯と重なっている");
+  must(await p.locator(".duebar .dots i").count() > 0, "進み具合の点が帯にない");
+  await p.click("#btn-duego");
+  must(await vis("read"), "帯から続きに入れない");
+  await p.click("#r-back");
+  await p.click("#btn-back");
+});
+await step("締め切りを過ぎると言いかたが変わる", async () => {
+  await p.locator(".work").first().click();
+  const 二日前 = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+  await p.locator("#w-duein").evaluate((el, v) => {
+    el.value = v; el.dispatchEvent(new Event("change", { bubbles: true }));
+  }, 二日前);
+  await p.waitForTimeout(200);
+  must((await p.textContent("#w-due")).includes("2日すぎています"), "超過が出ない");
+  await p.click("#btn-back");
+  must((await p.textContent(".duebar")).includes("すぎています"), "帯が変わらない");
+  must(await p.locator(".duebar.late").count() === 1, "帯の色が変わらない");
+});
+await step("締め切りを外すと見通しに戻る", async () => {
+  await p.locator(".work").first().click();
+  await p.click("#w-duedel");
+  await p.waitForTimeout(200);
+  must(await p.locator("#w-dueset").count() === 1, "外れていない");
+  must((await p.textContent("#w-eta")).length > 0, "見通しに戻らない");
+  await p.click("#btn-back");
+  must(await p.locator(".duebar").count() === 0, "帯が残っている");
+  await p.locator(".work").first().click();
+});
 await step("控えに直しと付箋と覚え書きが並ぶ", async () => {
   await p.click("#btn-notes");
   must(await vis("notes"), "控えが開かない");

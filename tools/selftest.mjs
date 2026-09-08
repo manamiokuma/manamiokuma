@@ -324,6 +324,54 @@ run("控えと書き出しに案が載る", () => {
 });
 ev(`cur = null; curId = null`);
 
+console.log("\n締め切りと見通し");
+const 日 = n => { const d = new Date(); d.setDate(d.getDate() - n);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+const 先 = n => 日(-n);
+
+run("読みはじめた日から数えるので、初日でも当てにできる", () => {
+  ev(`daily = ${JSON.stringify({ [日(0)]: 2 })}`);
+  eq(ev("pace()"), 2, "きょう2区切りなら一日2");
+  ev(`daily = ${JSON.stringify({ [日(0)]: 4, [日(1)]: 4, [日(2)]: 4 })}`);
+  eq(ev("pace()"), 4, "三日で12区切りなら一日4");
+});
+run("間をあけた日も数に入る", () => {
+  ev(`daily = ${JSON.stringify({ [日(6)]: 10 })}`);
+  const p = ev("pace()");
+  truthy(p > 1.3 && p < 1.6, "七日で10区切りなら一日1.4前後。得た値 " + p);
+});
+run("実績がなければ日付を当てずっぽうで出さない", () => {
+  ev("daily = {}");
+  eq(ev("eta(17)"), null, "何もしていないのに見通しを出している");
+});
+run("締め切りまでの日数と、一日に要る区切り数", () => {
+  ev(`daily = {}`);
+  eq(ev(`daysTo(${JSON.stringify(先(5))})`), 5, "五日後を五日と数えない");
+  eq(ev(`daysTo(${JSON.stringify(日(2))})`), -2, "過ぎた日を負で数えない");
+  const w = { due: 先(4), blocks: Array.from({ length: 20 }, (x, i) => ({ done: i < 8 })) };
+  const i = ev(`dueInfo(${JSON.stringify(w)})`);
+  eq(i.rest, 12, "残りの区切り数");
+  eq(i.days, 4);
+  eq(i.need, 3, "12区切りを4日で割ると一日3");
+});
+run("締め切り当日と、過ぎたあと", () => {
+  const 当日 = ev(`dueInfo(${JSON.stringify({ due: 日(0), blocks: [{ done: false }, { done: false }, { done: true }] })})`);
+  eq(当日.days, 0); eq(当日.need, 2, "当日は残り全部が今日の分");
+  const 超過 = ev(`dueInfo(${JSON.stringify({ due: 日(3), blocks: [{ done: false }, { done: false }] })})`);
+  eq(超過.days, -3); eq(超過.need, 2, "過ぎていても残り全部");
+});
+run("読み終えた原稿と校了した原稿は、締め切りを急かさない", () => {
+  eq(ev(`dueInfo(${JSON.stringify({ due: 先(3), blocks: [{ done: true }] })}).done`), true, "読み終えていると分からない");
+  eq(ev(`dueInfo(${JSON.stringify({ due: 先(3), closed: true, blocks: [{ done: false }] })})`), null, "校了後も急かしている");
+});
+run("きょうの分は、締め切りのある原稿から逆算される", () => {
+  ev(`conf.quota = 3; index = [{id:"a", title:"x", done:0, total:20, due:${JSON.stringify(先(4))}}]`);
+  eq(ev("todayNeed()"), 5, "20区切りを4日で割ると一日5");
+  ev(`index = [{id:"a", title:"x", done:0, total:20, due:null}]`);
+  eq(ev("todayNeed()"), 3, "締め切りがなければ決めた数のまま");
+  ev(`index = []; daily = {}`);
+});
+
 console.log("\nWordの読み書き");
 run("書き出したdocxを自分で読み戻せる", () => {
   const bytes = ev(`buildDocx([para([{t:"人形の部屋",b:true,sz:30}],true), para([{t:"　雨が降っていた。"}]), para([{t:"直す前",st:true,color:"808080"}])])`);

@@ -54,6 +54,23 @@
   .quota i{width:9px;height:9px;border-radius:5px;border:1px solid var(--ai3);display:block}
   .quota i.on{background:var(--shu);border-color:var(--shu)}
   .quota.done{color:var(--shu)}
+  /* 締め切り */
+  .duebar{display:block;width:100%;text-align:left;background:var(--kami);color:var(--ai);border-radius:3px;padding:13px 15px 14px;margin:0 0 14px}
+  .duebar b{display:block;font-family:var(--mincho);font-size:16.5px;font-weight:600;letter-spacing:.04em;margin-bottom:3px}
+  .duebar span{font-size:12px;color:#a9bccd;line-height:1.75;font-variant-numeric:tabular-nums}
+  .duebar.late{background:#5d1b12}
+  .duebar.late span{color:#e6b8b0}
+  .duebar .dots{display:flex;gap:4px;margin-top:9px}
+  .duebar .dots i{width:9px;height:9px;border-radius:5px;border:1px solid #4a6379;display:block}
+  .duebar .dots i.on{background:var(--ai);border-color:var(--ai)}
+  .duebar:active{opacity:.85}
+  .due{margin:0 0 18px}
+  .due .now{font-size:12.5px;color:var(--dim);line-height:1.9;font-variant-numeric:tabular-nums}
+  .due .now b{font-family:var(--mincho);font-size:15px;color:var(--kami);font-weight:600}
+  .due .hint2{font-size:12px;color:var(--dim);line-height:1.8;margin:5px 0 0}
+  .duebtn{font-size:12.5px;color:var(--dim);border:1px solid var(--ai3);border-radius:2px;padding:7px 12px;background:var(--ai2)}
+  .duebtn:hover{color:var(--kami);border-color:var(--dim)}
+  .due input[type=date]{font-size:15px;padding:9px;border:1px solid var(--ai3);border-radius:2px;background:var(--ai2);color:var(--kami);font-family:var(--gothic)}
   /* 見通し */
   .eta{margin:0 0 18px;font-size:12.5px;color:var(--dim);line-height:1.8}
   .eta b{font-family:var(--mincho);font-size:15px;color:var(--kami);font-weight:600}
@@ -265,6 +282,7 @@
     <p class="rest" id="w-rest"></p>
     <p class="sub" id="w-sub"></p>
     <p class="eta" id="w-eta"></p>
+    <div class="due" id="w-due"></div>
     <div class="sheet" id="w-sheet"></div>
     <button class="go" id="btn-go"></button>
     <div class="row">
@@ -386,7 +404,7 @@
     <p class="hint" id="c-dirstat" style="margin:7px 0 4px"></p>
     <p class="cat-h">きょうの分</p>
     <div class="field" style="margin-top:8px"><label for="c-quota">一日にこれだけ読めたら上出来、という区切り数</label><input id="c-quota" type="number" inputmode="numeric"></div>
-    <p class="hint" style="margin:0 0 4px">少なめに決めておくのがこつです。三区切りでおよそ三十分。</p>
+    <p class="hint" style="margin:0 0 4px">少なめに決めておくのがこつです。三区切りでおよそ三十分。締め切りを決めた原稿があるときは、そちらから逆算した数が優先されます。</p>
     <p class="cat-h">下読み</p>
     <p class="lead">機械が先に読んで、あやしい行に<u>鉛筆</u>を引きます。朱は人が入れるもの、鉛筆は機械が引くもの。うるさい項目は消してください。消しても本文は変わりません。</p>
     <div id="c-list"></div>
@@ -675,7 +693,8 @@ function renderHome(){
       const k=kindOf(w.kind);
       return '<button class="work '+(p>0&&p<100?"on":"")+'" data-id="'+w.id+'">'+
         '<h2>'+esc(w.title)+'</h2>'+
-        '<p>'+w.done+' / '+w.total+' 区切り　'+w.pass+'回目・'+esc(k.name)+(w.closed?"　校了":(p===100?"　この通しは終わり":""))+'</p>'+
+        '<p>'+w.done+' / '+w.total+' 区切り　'+w.pass+'回目・'+esc(k.name)+(w.closed?"　校了":(p===100?"　この通しは終わり":""))+
+        (w.due&&!w.closed? "<br>入稿 "+jday(w.due)+"　"+(daysTo(w.due)<0?"すぎています":"あと"+daysTo(w.due)+"日") : "")+'</p>'+
         '<div class="bar"><i style="width:'+p+'%"></i></div></button>';
     }).join("");
     list.querySelectorAll(".work").forEach(b=>b.onclick=()=>openWork(b.dataset.id));
@@ -687,11 +706,30 @@ function renderHome(){
   $("home-stat").innerHTML = days.length?
     '<div><b>'+streak()+'</b><span>続いた日数</span></div><div><b>'+t+'</b><span>きょう</span></div><div><b>'+total+'</b><span>これまで</span></div>' : "";
 }
-/* 直近二週間の実績から、一日あたりの区切り数 */
+/* ---- 締め切り ---- */
+function daysTo(due){
+  if(!due) return null;
+  const a=new Date(ymd()+"T00:00:00"), b=new Date(due+"T00:00:00");
+  return Math.round((b-a)/86400000);
+}
+function dueInfo(w){
+  if(!w||!w.due||w.closed) return null;
+  const days=daysTo(w.due), rest=w.blocks?w.blocks.filter(b=>!b.done).length:(w.total-w.done);
+  if(!rest) return {days:days,rest:0,need:0,done:true};
+  return {days:days, rest:rest, need: days>0?Math.ceil(rest/days):rest, done:false};
+}
+function jday(due){ const d=new Date(due+"T00:00:00"); return (d.getMonth()+1)+"月"+d.getDate()+"日"; }
+function dueWorks(){ return index.filter(w=>w.due&&!w.closed&&w.done<w.total); }
+function needToday(){
+  let n=0;
+  dueWorks().forEach(w=>{ const i=dueInfo(w); if(i&&!i.done) n+=i.need; });
+  return n;
+}
+/* 一日あたりの区切り数。読みはじめた日から数えるので、初日でも当てにできる数になる */
 function pace(){
-  let n=0; const d=new Date();
-  for(let i=0;i<14;i++){ n+=daily[ymd(d)]||0; d.setDate(d.getDate()-1); }
-  return n/14;
+  let sum=0, span=0; const d=new Date();
+  for(let i=0;i<14;i++){ const v=daily[ymd(d)]||0; if(v>0) span=i+1; sum+=v; d.setDate(d.getDate()-1); }
+  return span? sum/span : 0;
 }
 /* この調子だと、いつ読み終わるか */
 function eta(rest){
@@ -702,20 +740,34 @@ function eta(rest){
   const d=new Date(); d.setDate(d.getDate()+days);
   return {days:days, when:(d.getMonth()+1)+"月"+d.getDate()+"日"};
 }
-const quota=()=>Math.max(1,conf.quota||3);
+const baseQuota=()=>Math.max(1,conf.quota||3);
+const todayNeed=()=>{ const n=needToday(); return n>0?n:baseQuota(); };
 const doneToday=()=>daily[ymd()]||0;
-const quotaLeft=()=>Math.max(0,quota()-doneToday());
+const quotaLeft=()=>Math.max(0,todayNeed()-doneToday());
 function renderQuota(){
-  const q=quota(), t=doneToday(), left=quotaLeft();
-  $("home-quota").innerHTML='<div class="quota '+(left?"":"done")+'"><span class="dots">'+
-    Array.from({length:Math.min(q,12)},(x,i)=>'<i class="'+(i<t?"on":"")+'"></i>').join("")+'</span>'+
+  const q=todayNeed(), t=doneToday(), left=quotaLeft(), dw=dueWorks();
+  const dots='<span class="dots">'+Array.from({length:Math.min(q,12)},(x,i)=>'<i class="'+(i<t?"on":"")+'"></i>').join("")+'</span>';
+  dueTop=null;
+  if(dw.length){                       /* 締め切りがあるときは、締め切りの帯ひとつにまとめる */
+    const near=dw.slice().sort((a,b)=>daysTo(a.due)-daysTo(b.due))[0], d=daysTo(near.due);
+    dueTop=near.id;
+    $("home-quota").innerHTML='<button class="duebar '+(d<0?"late":"")+'" id="btn-duego"><b>'+esc(near.title)+'　'+
+      (d<0? "締め切りを"+(-d)+"日すぎています" : d===0? "きょうが締め切りです" : "入稿まで あと"+d+"日")+'</b>'+
+      '<span>'+jday(near.due)+'　のこり'+(near.total-near.done)+'区切り　'+
+      (left? "きょうは あと"+left+"区切り（およそ"+mins(left*2200)+"）" : "きょうの分は済みました")+'</span>'+dots+'</button>';
+    $("btn-duego").onclick=()=>openWork(near.id,true);
+    return;
+  }
+  $("home-quota").innerHTML='<div class="quota '+(left?"":"done")+'">'+dots+
     (left? "きょうの分　あと"+left+"区切り（およそ"+mins(left*2200)+"）" : "きょうの分は済みました　"+t+"区切り")+'</div>';
 }
 /* つづきから。いちばん最後にひらいた原稿を、一押しで開けるようにする */
+let dueTop=null;
 function renderResume(){
   const box=$("home-resume"); box.innerHTML="";
   const w=index.find(x=>x.id===conf.last);
   if(!w||w.closed||w.done>=w.total) return;
+  if(w.id===dueTop) return;                 /* 締め切りの帯が同じ原稿を指しているなら、重ねない */
   box.innerHTML='<button class="resume" id="btn-resume"><b>つづきを読む</b>'+
     '<span>'+esc(w.title)+'　'+(w.done+1)+'区切り目　のこり'+(w.total-w.done)+'</span></button>';
   $("btn-resume").onclick=()=>{ openWork(conf.last,true); };
@@ -749,10 +801,55 @@ function migrate(w){
   w.blocks.forEach(b=>{ b.marks=b.marks||[]; b.fusen=b.fusen||[]; b.edits=b.edits||{}; b.advice=b.advice||{};
     b.fmemo=b.fmemo||{}; b.wide=b.wide||{on:false,memo:""}; b.note=b.note||""; });
   w.pass=w.pass||1; w.kind=w.kind||"typo"; w.log=w.log||[]; w.history=w.history||[]; w.v=2;
-  if(w.world===undefined){ w.world="none"; w.r18=true; w.moreSkills=""; }   /* R18は既定で入っている前提 */
+  if(w.world===undefined){ w.world="none"; w.r18=true; w.moreSkills=""; }
+  if(w.due===undefined) w.due=null;   /* R18は既定で入っている前提 */
 }
 function firstUndone(){ for(let i=0;i<cur.blocks.length;i++) if(!cur.blocks[i].done) return i; return -1; }
 let sealNew=false;
+function renderDue(){
+  const box=$("w-due");
+  if(cur.closed){ box.innerHTML=""; return; }
+  const i=dueInfo(cur);
+  if(!i){
+    box.innerHTML='<button class="duebtn" id="w-dueset">締め切りを決める</button><input type="date" id="w-duein" class="hide">';
+  }else if(i.done){
+    box.innerHTML='<p class="now"><b>'+jday(cur.due)+'</b> が締め切り。この通しは読み終わっています。</p>'+
+      '<button class="duebtn" id="w-duedel" style="margin-top:8px">締め切りを外す</button><input type="date" id="w-duein" class="hide">';
+  }else{
+    const p=pace(), mine=p>0?Math.ceil(i.rest/p):null, gap=(mine!==null&&i.days>0)?mine-i.days:null;
+    let line;
+    if(i.days<0) line='<b>締め切りを'+(-i.days)+'日すぎています</b>　のこり'+i.rest+'区切り';
+    else if(i.days===0) line='<b>きょうが締め切り</b>　のこり'+i.rest+'区切り';
+    else line='入稿まで <b>あと'+i.days+'日</b>（'+jday(cur.due)+'）　一日 <b>'+i.need+'</b> 区切り（およそ'+mins(i.need*2200)+'）';
+    let judge="";
+    if(gap!==null) judge = gap>0? "いまの調子だと "+gap+"日おくれます。"
+      : (gap<0? "いまの調子なら "+(-gap)+"日ぶん余ります。" : "いまの調子でちょうど間に合います。");
+    let advice="";
+    if(i.days>=0 && (gap===null||gap>0)){
+      advice='<p class="hint2">間に合わせるなら、この通しを最後にして校了へ回すか、下読みを誤字だけに絞ると速く進みます。'+
+        '通しの種類を「誤字と表記」にすると、見るところが減ります。</p>';
+    }
+    box.innerHTML='<p class="now">'+line+(judge?'<br>'+judge:'')+'</p>'+advice+
+      '<button class="duebtn" id="w-dueset" style="margin-top:9px">締め切りを変える</button>'+
+      ' <button class="duebtn" id="w-duedel" style="margin-top:9px">外す</button>'+
+      '<input type="date" id="w-duein" class="hide">';
+  }
+  const inp=$("w-duein");
+  inp.value=cur.due||"";
+  if($("w-dueset")) $("w-dueset").onclick=()=>{
+    inp.classList.remove("hide");
+    if(inp.showPicker){ try{ inp.showPicker(); }catch(e){ inp.focus(); } } else inp.focus();
+  };
+  if($("w-duedel")) $("w-duedel").onclick=()=>{ setDue(null); };
+  inp.onchange=()=>setDue(inp.value||null);
+}
+function setDue(v){
+  cur.due=v||null;
+  const w=index.find(x=>x.id===curId); if(w){ w.due=cur.due; }
+  saveWork(true); jset(K_INDEX,index);
+  renderWork();
+  toast(v? "締め切りを"+jday(v)+"にしました" : "締め切りを外しました");
+}
 function renderLog(){
   const h=(cur.history||[]);
   $("w-log").innerHTML = h.length? '<div class="logitem" style="border:none;padding-bottom:4px"><span>通した記録</span><span></span></div>'+
@@ -787,8 +884,9 @@ function renderWork(){
   }).join("");
   $("w-sheet").querySelectorAll(".cell").forEach(c=>c.onclick=()=>openBlock(+c.dataset.i));
   const e=eta(rest.length);
-  $("w-eta").innerHTML = cur.closed? "" : (e? "この調子だと <b>"+e.when+"</b> ごろ（あと"+e.days+"日）に、この通しを読み終わります。"
+  $("w-eta").innerHTML = (cur.closed||cur.due)? "" : (e? "この調子だと <b>"+e.when+"</b> ごろ（あと"+e.days+"日）に、この通しを読み終わります。"
     : (rest.length? "きょうから読みはじめると、日数の見当がつくようになります。" : ""));
+  renderDue();
   $("w-seal").innerHTML = cur.closed? '<div class="sealwrap"><div class="seal'+(sealNew?" press":"")+'">校了</div><p><b>校了</b>'+
     esc(cur.title)+'　'+(cur.closedAt||"")+'　'+cur.pass+'回通しました</p></div>' : "";
   sealNew=false;
@@ -817,7 +915,7 @@ function flushWork(){
   clearTimeout(saveT); if(!cur) return;
   jset("shuire:work:"+curId,cur);
   const w=index.find(x=>x.id===curId);
-  if(w){ w.done=cur.blocks.filter(b=>b.done).length; w.total=cur.blocks.length; w.pass=cur.pass; w.kind=cur.kind; w.title=cur.title; jset(K_INDEX,index); }
+  if(w){ w.done=cur.blocks.filter(b=>b.done).length; w.total=cur.blocks.length; w.pass=cur.pass; w.kind=cur.kind; w.title=cur.title; w.due=cur.due||null; w.closed=!!cur.closed; jset(K_INDEX,index); }
 }
 
 /* ============================================================
@@ -1539,7 +1637,7 @@ function renderConf(){
     const id=b.dataset.id; conf.rules[id]=conf.rules[id]===false; b.classList.toggle("on",conf.rules[id]!==false); saveConf();
   });
   $("c-cpm").onchange=()=>{ conf.cpm=Math.max(50,Math.min(2000,+$("c-cpm").value||200)); saveConf(); };
-  $("c-quota").value=quota();
+  $("c-quota").value=baseQuota();
   $("c-quota").onchange=()=>{ conf.quota=Math.max(1,Math.min(50,+$("c-quota").value||3)); saveConf(); renderQuota(); };
   view("conf");
 }
