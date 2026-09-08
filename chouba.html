@@ -324,7 +324,7 @@ function stats(){
   });
   days.sort();
   return {days:days.length,last:days.length?days[days.length-1]:null,
-    waiting:S.episodes.filter(function(e){return e.checked&&!e.reserved}).length,
+    waiting:S.episodes.filter(function(e){return e.checked&&!e.reserved&&!e.posted}).length,
     writing:S.works.filter(isWriting).length,
     blank:S.works.filter(function(w){return w.stage==="未記入"}).length,
     done:S.works.filter(function(w){return w.stage==="完成"}).length};
@@ -417,6 +417,8 @@ function adopt(d){
   S.episodes.forEach(function(e){
     if(e.pixivUrl==null)e.pixivUrl="";
     if(e.hasCover==null)e.hasCover=false;
+    if(e.posted==null)e.posted=!!e.pixivUrl;
+    if(e.postedAt==null)e.postedAt=e.posted?(dpart(e.scheduledAt)||""):"";
   });
   S.v=2;
   /* 旧いかたちからの繰り越し */
@@ -765,9 +767,10 @@ function render(){
     view.name==="pick"?vPick():
     view.name==="sched"?vSched():
     view.name==="ep"?vEp():
+    view.name==="newep"?vNewEp():
     view.name==="data"?vData():"";
   var tab={dash:"dash",works:"works",work:"works",split:"works",books:"books",release:"books",
-           series:"books",pick:"books",sched:"sched",ep:"sched",data:""}[view.name]||"";
+           series:"books",pick:"books",sched:"sched",ep:"sched",newep:"sched",data:""}[view.name]||"";
   var bs=document.querySelectorAll("#tabs button");
   for(var i=0;i<bs.length;i++)bs[i].className=bs[i].getAttribute("data-tab")===tab?"on":"";
   window.scrollTo(0,y);
@@ -909,13 +912,13 @@ function nextMoves(){
     h+=move(esc(st0[0].title),"サンプルがまだ出ていません"+(r0&&r0.eventDate?"（"+md(r0.eventDate)+"頒布）":""),
       'data-act="work" data-id="'+st0[0].id+'"');n++;
   }
-  var undated=S.episodes.filter(function(e){return e.checked&&!e.scheduledAt});
+  var undated=S.episodes.filter(function(e){return e.checked&&!e.scheduledAt&&!e.posted});
   if(n<3&&undated.length){
     var w=work(undated[0].workId);
     h+=move("日付のない話が"+undated.length+"本","作品の画面で「毎日で割り当て」",
       'data-act="split" data-id="'+(w?w.id:"")+'"');n++;
   }
-  var unres=S.episodes.filter(function(e){return e.checked&&!e.reserved&&e.scheduledAt});
+  var unres=S.episodes.filter(function(e){return e.checked&&!e.reserved&&!e.posted&&e.scheduledAt});
   if(n<3&&unres.length){
     h+=move("pixivに未入力の予約が"+unres.length+"本","公開の画面で入れ終えた印をつける",
       'data-act="tab" data-id="sched"');n++;
@@ -1152,6 +1155,7 @@ function vWork(){
       '</span></span><span class="go">›</span></button>';
   });
   h+='<button class="btn fill" data-act="split" data-id="'+w.id+'">話に分ける・日付を振る</button>';
+  h+='<button class="btn" data-act="new-ep" data-id="'+w.id+'">出しおわった話を登録する</button>';
   h+='</section>';
   h+='<button class="btn danger" data-act="del-work" data-id="'+w.id+'">この作品と話を消す</button>';
   return h;
@@ -1163,10 +1167,11 @@ function vSplit(){
   if(!view.workId){
     h+='<button class="back" data-act="back">‹ もどる</button>';
     h+='<section><h2>どの作品を分けますか</h2>';
-    S.works.filter(function(w){return w.kind!=="本"}).forEach(function(w){
+    S.works.forEach(function(w){
       h+='<button class="row" data-act="split" data-id="'+w.id+'">'+
         '<span class="body"><span class="t">'+esc(w.title)+'</span>'+
-        '<span class="m">'+epsOf(w.id).length+'話</span></span><span class="go">›</span></button>';
+        '<span class="m">'+epsOf(w.id).length+'話'+(w.kind==="本"?'<span class="pill ai">同人誌</span>':"")+
+        '</span></span><span class="go">›</span></button>';
     });
     h+='</section>';return h;
   }
@@ -1351,7 +1356,10 @@ function vSched(){
   var future=list.filter(function(e){return dpart(e.scheduledAt)>=t});
   var undated=S.episodes.filter(function(e){return !e.scheduledAt});
   var s=stats();
-  h+='<div class="note" style="padding:4px 0 12px">予約ずみ '+s.days+'日ぶん　／　仕込み待ち '+s.waiting+'本</div>';
+  var posted=S.episodes.filter(function(e){return e.posted});
+  h+='<div class="note" style="padding:4px 0 10px">予約ずみ '+s.days+'日ぶん　／　仕込み待ち '+s.waiting+'本　／　公開ずみ '+posted.length+'本</div>';
+  h+='<button class="btn" data-act="new-ep" style="margin-top:0">pixivに出しおわった話を登録する</button>';
+  h+='<div class="hint">もう公開してある話は、こちらから入れてください。日付をさかのぼって入れられます。</div>';
   ensureCovers(future.filter(function(e){return e.hasCover}).slice(0,20).map(function(e){return e.id}));
   h+='<section><h2>これから<span class="n">'+future.length+'本</span></h2>';
   if(!future.length)h+='<div class="empty">日付の入った話がありません。</div>';
@@ -1376,7 +1384,9 @@ function vSched(){
       h+='<button class="row" data-act="ep" data-id="'+e.id+'" style="opacity:.62">'+
         '<span class="d"><b>'+md(d)+'</b> '+wdOf(d)+'</span>'+
         '<span class="body"><span class="t">'+esc(e.title)+'</span><span class="m">'+
-        (e.reserved?'<span class="pill md">予約ずみ</span>':'<span class="pill">未予約</span>')+
+        (e.posted?'<span class="pill md">公開ずみ</span>':
+         e.reserved?'<span class="pill">予約ずみ</span>':'<span class="pill">未予約</span>')+
+        (e.pixivUrl?'<span>pixiv</span>':"")+
         '</span></span><span class="go">›</span></button>';
     });
     h+='</section>';
@@ -1427,6 +1437,10 @@ function vEp(){
      '<button class="btn'+(e.checked?" fill":"")+'" style="margin-top:6px" data-act="tg-check" data-id="'+e.id+'">'+(e.checked?"検査済":"未検査")+'</button>'+
      '<button class="btn'+(e.reserved?" fill":"")+'" style="margin-top:6px" data-act="tg-res" data-id="'+e.id+'">'+(e.reserved?"予約ずみ":"未予約")+'</button></div>';
   h+='<div class="hint">左は文体検査と目視、右はpixivの予約に入れ終えたかどうかです。</div>';
+  h+='<div class="btns"><button class="btn'+(e.posted?" fill":"")+'" data-act="tg-post" data-id="'+e.id+'">'+
+     (e.posted?"公開ずみ":"まだ出していない")+'</button>'+
+     '<label class="field half" style="padding:12px 0 0"><span>出した日</span>'+
+     '<input type="date" value="'+esc(e.postedAt||"")+'" data-e="'+e.id+'" data-f="postedAt"></label></div>';
   h+=coverSection(e,"ep");
   if(e.pixivUrl)h+='<a class="link" href="'+esc(e.pixivUrl)+'" target="_blank" rel="noopener">pixivで開く</a>';
   h+='<label class="field"><span>pixivのURL（この話）</span><input value="'+esc(e.pixivUrl)+'" data-e="'+e.id+'" data-f="pixivUrl" placeholder="https://www.pixiv.net/novel/show.php?id=..."></label>';
@@ -1465,6 +1479,47 @@ function prevEp(e){
 }
 
 /* ---- 控え ---- */
+
+function vNewEp(){
+  var f=view.form||{};
+  var h='<button class="back" data-act="back">‹ もどる</button>';
+  h+='<section><h2>出しおわった話を登録する</h2>';
+  h+='<div class="note" style="padding:0 0 8px">もうpixivに出してある話を、あとから台帳に入れます。'+
+     '検査ずみ・予約ずみ・公開ずみの印が最初から立ちます。</div>';
+  h+='<label class="field"><span>どの作品の話か</span><select id="neWork">'+
+     '<option value="">（新しい作品として足す）</option>'+
+     S.works.map(function(w){return '<option value="'+w.id+'"'+(f.workId===w.id?" selected":"")+'>'+esc(w.title)+'</option>'}).join("")+
+     '</select></label>';
+  h+='<label class="field"><span>新しい作品の題（上で「新しい作品」を選んだとき）</span>'+
+     '<input id="neWorkTitle" value="'+esc(f.workTitle||"")+'" placeholder="作品名"></label>';
+  h+='<label class="field"><span>話のタイトル</span><input id="neTitle" value="'+esc(f.title||"")+'" placeholder="ゼロの融点（1）"></label>';
+  h+='<div class="pair">'+
+     '<label class="field half"><span>字数</span><input id="neChars" type="number" inputmode="numeric" value="'+(f.chars||"")+'"></label>'+
+     '<label class="field half"><span>区分</span><select id="neR18">'+
+       '<option value="">全年齢</option><option value="1"'+(f.isR18?" selected":"")+'>R-18</option></select></label></div>';
+  h+='<div class="pair">'+
+     '<label class="field half"><span>出した日</span><input id="neDate" type="date" value="'+esc(f.date||today())+'"></label>'+
+     '<label class="field half"><span>時刻</span><input id="neTime" type="time" value="'+esc(f.time||S.settings.time||"19:00")+'"></label></div>';
+  h+='<label class="field"><span>pixivのURL</span><input id="neUrl" value="'+esc(f.url||"")+'" placeholder="https://www.pixiv.net/novel/show.php?id=..."></label>';
+  h+='<button class="btn fill" data-act="new-ep-save">登録する</button>';
+  h+='<div class="hint">続けて登録できます。作品と日付はそのまま残り、日付は一日ずつ進みます。</div>';
+  if(view.added&&view.added.length){
+    h+='<section><h2>入れたもの<span class="n">'+view.added.length+'本</span></h2>';
+    view.added.slice().reverse().forEach(function(id){
+      var e=ep(id);if(!e)return;
+      var w=work(e.workId);
+      h+='<button class="row" data-act="ep" data-id="'+e.id+'">'+
+        '<span class="d">'+(dpart(e.scheduledAt)?md(dpart(e.scheduledAt)):"—")+'</span>'+
+        '<span class="body"><span class="t">'+esc(e.title)+'</span><span class="m">'+
+        (w?'<span>'+esc(w.title)+'</span>':"")+'<span class="tabular">'+num(e.chars)+'字</span>'+
+        (e.isR18?'<span class="r18">R-18</span>':"")+'<span class="pill md">公開ずみ</span>'+
+        '</span></span><span class="go">›</span></button>';
+    });
+    h+='</section>';
+  }
+  h+='</section>';
+  return h;
+}
 function vData(){
   var h='<button class="back" data-act="back">‹ もどる</button>';
   var nb=needsBackup(),ok=S.works.length-nb.length;
@@ -1536,7 +1591,7 @@ function addEpisode(workId){
   var es=epsOf(workId),w=work(workId),n=es.length+1;
   S.episodes.push({id:uid(),workId:workId,index:n,title:(w?w.title:"")+"（"+n+"）",chars:0,
     isR18:false,checked:false,caption:"",tags:es.length?(es[es.length-1].tags||[]).slice():[],
-    scheduledAt:null,reserved:false,pixivUrl:"",hasCover:false});
+    scheduledAt:null,reserved:false,pixivUrl:"",hasCover:false,posted:false,postedAt:""});
   save();render();
 }
 function parseTags(s){
@@ -1758,6 +1813,34 @@ document.addEventListener("click",function(ev){
     save();jump({name:"books"});return;
   }
   if(act==="add-ep"){addEpisode(id);return}
+  if(act==="new-ep"){go({name:"newep",form:{workId:id||""},added:[]});return}
+  if(act==="new-ep-save"){
+    var g=function(x){var n=document.getElementById(x);return n?n.value:""};
+    var wid2=g("neWork"),wt=g("neWorkTitle").trim(),ti=g("neTitle").trim();
+    var ch=+g("neChars")||0,r18=!!g("neR18"),dt=g("neDate"),tm=g("neTime")||"19:00",ur=g("neUrl").trim();
+    if(!wid2&&!wt){banner("作品を選ぶか、新しい作品の題を入れてください。");return}
+    if(!ti&&!wt){banner("話のタイトルを入れてください。");return}
+    var wk3=wid2?work(wid2):null;
+    if(!wk3){
+      wk3={id:uid(),title:wt,fandom:"",genre:"",cp:"",au:"",kind:"web",stage:"完成",
+        chaptersDone:0,chaptersTotal:0,charsNow:0,charsTarget:0,seriesId:"",releaseId:"",
+        note:"",updatedAt:today(),driveUrl:"",driveTitle:"",driveModified:"",driveQuery:"",
+        driveState:"",driveCheckedAt:"",driveHits:0,sampleState:"",sampleAt:"",sampleUrl:"",
+        pixivUrl:"",countedAt:"",countedFrom:"",hasCover:false};
+      S.works.unshift(wk3);
+    }
+    var idx=epsOf(wk3.id).length+1;
+    var ne={id:uid(),workId:wk3.id,index:idx,title:ti||wk3.title,chars:ch,isR18:r18,
+      checked:true,caption:"",tags:[],scheduledAt:dt?joinDT(dt,tm):null,reserved:true,
+      pixivUrl:ur,hasCover:false,posted:true,postedAt:dt||today()};
+    S.episodes.push(ne);
+    view.form={workId:wk3.id,workTitle:"",title:"",chars:"",isR18:r18,
+      date:dt?shift(dt,1):today(),time:tm,url:""};
+    view.added=(view.added||[]).concat([ne.id]);
+    save();render();clearBanner();
+    banner("「"+ne.title+"」を公開ずみで入れました。",false,"ok");
+    return;
+  }
   if(act==="renumber"){
     var w5=work(id);if(!w5)return;
     var es=epsOf(id);
@@ -1771,6 +1854,12 @@ document.addEventListener("click",function(ev){
   if(act==="tg-r18"){var e1=ep(id);if(e1){e1.isR18=!e1.isR18;save();render()}return}
   if(act==="tg-check"){var e2=ep(id);if(e2){e2.checked=!e2.checked;save();render()}return}
   if(act==="tg-res"){var e3=ep(id);if(e3){e3.reserved=!e3.reserved;save();render()}return}
+  if(act==="tg-post"){
+    var ep2=ep(id);if(!ep2)return;
+    ep2.posted=!ep2.posted;
+    if(ep2.posted){ep2.checked=true;ep2.reserved=true;if(!ep2.postedAt)ep2.postedAt=dpart(ep2.scheduledAt)||today()}
+    save();render();return;
+  }
   if(act==="up"){swap(id,-1);return}
   if(act==="down"){swap(id,1);return}
   if(act==="del-ep"){
