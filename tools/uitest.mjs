@@ -31,6 +31,20 @@ const 小窓ではい = async () => { await p.locator("#ask-ok").waitFor({ state
 
 console.log("\n通しで動かす");
 await step("一覧が出る", async () => must(await vis("home"), "一覧が見えない"));
+await step("ファイルを選ぶ札は、本物の選択窓につながっている（iPhone の道）", async () => {
+  await p.click("#btn-add");
+  must(await vis("add"), "入れる画面に来ない");
+  const chooser = p.waitForEvent("filechooser", { timeout: 3000 });
+  const box = await p.locator("#a-pick").boundingBox();
+  await p.mouse.click(box.x + box.width / 2, box.y + box.height / 2);   /* 指が触れるのは、透明に重ねた input */
+  const fc = await chooser;
+  must(!fc.isMultiple(), "複数選択になっている");
+  await fc.setFiles({ name: "塔.txt", mimeType: "text/plain", buffer: Buffer.from("　塔は町の外れに立っていた。そのことを彼は知っていた。\n　雨が降っていた。", "utf8") });
+  await p.locator("#a-filestat").filter({ hasText: "読み込みました" }).waitFor({ timeout: 3000 });
+  must((await p.inputValue("#a-body")).includes("塔は町の外れ"), "本文が入らない");
+  must((await p.inputValue("#a-title")) === "塔", "題名がファイル名から入らない");
+  await p.click("#a-back");
+});
 await step("原稿を入れる", async () => {
   await p.click("#btn-add");
   await p.fill("#a-title", "人形の部屋");

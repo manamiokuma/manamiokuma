@@ -121,6 +121,8 @@
   .go{display:block;width:100%;background:var(--shu);color:#fff;font-size:16px;font-weight:600;padding:16px;border-radius:3px;letter-spacing:.06em}
   .go:active{background:var(--shu-d)}
   .go.quiet{background:none;color:var(--dim);border:1px solid var(--ai3);font-weight:400;font-size:13.5px;padding:13px}
+  .pickwrap{position:relative}
+  .pickwrap input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}  /* iPhone では隠した input を押させると開かないことがあるので、本物の input をボタンの上に透明に重ねる */
   .go.quiet:hover{color:var(--kami);border-color:var(--dim)}
 
   .row{display:flex;gap:9px;margin-top:9px}
@@ -363,8 +365,8 @@
     <div class="brand"><h1 class="sub-h">原稿を入れる</h1><button id="a-back">やめる</button></div>
     <div class="field">
       <label>ファイル</label>
-      <button class="go quiet" id="a-pick" style="padding:15px">.docx / .txt を選ぶ</button>
-      <input id="a-file" type="file" accept=".docx,.txt,.md" hidden>
+      <div class="pickwrap"><button class="go quiet" id="a-pick" type="button" style="padding:15px">.docx / .txt を選ぶ</button>
+        <input id="a-file" type="file" aria-label="原稿のファイルを選ぶ" accept=".docx,.txt,.md,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/*"></div>
       <p class="hint" id="a-filestat">Wordで書き出したファイルをそのまま読み込みます。ふりがなや書式は落ちて、本文だけが入ります。</p>
     </div>
     <div class="field"><label for="a-title">題名</label><input id="a-title" placeholder="人形の部屋"></div>
@@ -1222,8 +1224,54 @@ function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rule
    .docx を読む（zipを直接ほどく・通信なし）
    ============================================================ */
 async function inflate(u8){
-  const s=new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(s).arrayBuffer());
+  if(typeof DecompressionStream==="function"){
+    try{ const s=new Blob([u8]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+         return new Uint8Array(await new Response(s).arrayBuffer()); }
+    catch(e){}                                   /* "deflate-raw" を知らないブラウザ（iOS 17 まで）は下の手書きで */
+  }
+  return inflateRaw(u8);
+}
+/* DEFLATE を手でほどく（RFC 1951。ブラウザの助けがないときの控え） */
+const LBASE=[3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258],
+      LEXT=[0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0],
+      DBASE=[1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577],
+      DEXT=[0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13],
+      CLORDER=[16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
+function inflateRaw(src){
+  let out=new Uint8Array(Math.max(4096,src.length*4)), op=0, ip=0, buf=0, cnt=0;
+  const bad=()=>{ throw new Error("Wordのファイルがほどけませんでした"); };
+  const need=n=>{ if(op+n>out.length){ const o=new Uint8Array(Math.max(out.length*2,op+n)); o.set(out); out=o; } };
+  const bits=n=>{ while(cnt<n){ if(ip>=src.length) bad(); buf|=src[ip++]<<cnt; cnt+=8; } const v=buf&((1<<n)-1); buf>>>=n; cnt-=n; return v; };
+  const build=lens=>{ const count=new Uint16Array(16), offs=new Uint16Array(16), symbol=new Uint16Array(lens.length);
+    lens.forEach(l=>count[l]++); count[0]=0; for(let i=1;i<16;i++) offs[i]=offs[i-1]+count[i-1];
+    lens.forEach((l,i)=>{ if(l) symbol[offs[l]++]=i; }); return {count:count,symbol:symbol}; };
+  const decode=h=>{ let code=0, first=0, index=0;
+    for(let len=1;len<16;len++){ code|=bits(1); const c=h.count[len]; if(code-c<first) return h.symbol[index+(code-first)]; index+=c; first+=c; first<<=1; code<<=1; }
+    bad(); };
+  const codes=(lc,dc)=>{ for(;;){ let sym=decode(lc);
+    if(sym<256){ need(1); out[op++]=sym; }
+    else if(sym===256) return;
+    else { sym-=257; if(sym>=29) bad(); let len=LBASE[sym]+bits(LEXT[sym]); const ds=decode(dc); if(ds>=30) bad(); const dist=DBASE[ds]+bits(DEXT[ds]); if(dist>op) bad();
+           need(len); while(len--){ out[op]=out[op-dist]; op++; } } } };
+  let fixedL=null, fixedD=null;
+  let last;
+  do{
+    last=bits(1); const type=bits(2);
+    if(type===0){ buf=0; cnt=0; if(ip+4>src.length) bad(); const len=src[ip]|(src[ip+1]<<8); ip+=4; if(ip+len>src.length) bad(); need(len); out.set(src.subarray(ip,ip+len),op); op+=len; ip+=len; }
+    else if(type===1){ if(!fixedL){ const l=[]; for(let i=0;i<288;i++) l.push(i<144?8:i<256?9:i<280?7:8); fixedL=build(l); fixedD=build(new Array(30).fill(5)); } codes(fixedL,fixedD); }
+    else if(type===2){
+      const nlen=bits(5)+257, ndist=bits(5)+1, ncode=bits(4)+4, cl=new Array(19).fill(0);
+      for(let i=0;i<ncode;i++) cl[CLORDER[i]]=bits(3);
+      const ch=build(cl), lens=[];
+      while(lens.length<nlen+ndist){ const sym=decode(ch);
+        if(sym<16) lens.push(sym);
+        else { let rep, val=0; if(sym===16){ if(!lens.length) bad(); val=lens[lens.length-1]; rep=3+bits(2); } else if(sym===17) rep=3+bits(3); else rep=11+bits(7);
+               if(lens.length+rep>nlen+ndist) bad(); while(rep--) lens.push(val); } }
+      codes(build(lens.slice(0,nlen)),build(lens.slice(nlen)));
+    }
+    else bad();
+  }while(!last);
+  return out.subarray(0,op);
 }
 async function readDocx(ab){
   const dv=new DataView(ab), u8=new Uint8Array(ab);
@@ -2431,7 +2479,6 @@ $("ab-body").innerHTML=
 async function readAnyFile(f){
   let text;
   if(/\.docx$/i.test(f.name)){
-    if(typeof DecompressionStream==="undefined") throw new Error("この端末ではdocxを開けません。本文を貼りつけてください");
     text=xmlToText(await readDocx(await f.arrayBuffer()));
   }else{ text=await f.text(); }
   if(!text.trim()) throw new Error("本文が空でした");
@@ -2446,7 +2493,7 @@ $("a-file").onchange=async e=>{
     $("a-body").value=text;
     if(!$("a-title").value.trim()) $("a-title").value=f.name.replace(/\.(docx|txt|md)$/i,"");
     stat.textContent=f.name+"　"+text.length.toLocaleString()+"字を読み込みました";
-  }catch(err){ stat.textContent=(err&&err.message)||"読み込めませんでした"; }
+  }catch(err){ stat.textContent="読み込めませんでした　"+((err&&(err.message||err.name))||"")+"　本文を貼りつけても入ります"; }
   e.target.value="";
 };
 $("btn-add").onclick=()=>{ $("a-title").value=""; $("a-body").value="";

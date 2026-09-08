@@ -708,6 +708,35 @@ await run("持ち出しファイルは、新しいほうだけ取り込む", () 
 evA("stopSync()");
 
 console.log("\nWordの読み書き");
+await run("ブラウザの助けなしでも deflate をほどける（iPhone の古い Safari の控え）", async () => {
+  const zlib = await import("node:zlib");
+  const 文 = ("　雨が降っていた。窓の外は白く煙って、遠くの塔の輪郭さえ溶けている。".repeat(40) + "\n") + "x".repeat(3000) + Buffer.from(Array.from({length: 2000}, (_, i) => (i * 7919) % 251)).toString("latin1");
+  for (const level of [0, 1, 6, 9]) {
+    const plain = Buffer.from(文, "utf8");
+    const packed = zlib.deflateRawSync(plain, { level });
+    ctx.__packed = new Uint8Array(packed);
+    const got = Buffer.from(ev("inflateRaw(__packed)"));
+    eq(got.equals(plain), true, "level " + level + " でほどいた中身が違う（" + got.length + " / " + plain.length + "）");
+  }
+  ctx.__stored = new Uint8Array(zlib.deflateRawSync(Buffer.from("abc"), { level: 0 }));
+  eq(Buffer.from(ev("inflateRaw(__stored)")).toString(), "abc", "無圧縮ブロック");
+  let threw = false; try { ev("inflateRaw(new Uint8Array([7,255,255,255]))"); } catch (e) { threw = true; }
+  truthy(threw, "壊れたデータで黙って返した");
+});
+await run("圧縮された docx（Word が書くもの）も、手書きの deflate で本文が読める", async () => {
+  const zlib = await import("node:zlib");
+  const xml = '<?xml version="1.0"?><w:document><w:body><w:p><w:r><w:t>控え</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">　雨が降っていた。</w:t></w:r></w:p></w:body></w:document>';
+  const name = Buffer.from("word/document.xml"), plain = Buffer.from(xml, "utf8"), packed = zlib.deflateRawSync(plain, { level: 9 });
+  const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n >>> 0); return b; }, u16 = n => { const b = Buffer.alloc(2); b.writeUInt16LE(n); return b; };
+  const local = Buffer.concat([u32(0x04034b50), u16(20), u16(0), u16(8), u16(0), u16(0), u32(0), u32(packed.length), u32(plain.length), u16(name.length), u16(0), name, packed]);
+  const cen = Buffer.concat([u32(0x02014b50), u16(20), u16(20), u16(0), u16(8), u16(0), u16(0), u32(0), u32(packed.length), u32(plain.length), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(0), name]);
+  const eocd = Buffer.concat([u32(0x06054b50), u16(0), u16(0), u16(1), u16(1), u32(cen.length), u32(local.length), u16(0)]);
+  const zip = Buffer.concat([local, cen, eocd]);
+  ctx.__zip = zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength);
+  eq(ev("typeof DecompressionStream"), "undefined", "この机にはブラウザの助けがない前提");
+  const text = ev("readDocx(__zip).then(xmlToText)");
+  eq(await text, "控え\n　雨が降っていた。");
+});
 await run("書き出したdocxを自分で読み戻せる", () => {
   const bytes = ev(`buildDocx([para([{t:"人形の部屋",b:true,sz:30}],true), para([{t:"　雨が降っていた。"}]), para([{t:"直す前",st:true,color:"808080"}])])`);
   const buf = Buffer.from(bytes);
