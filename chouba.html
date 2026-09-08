@@ -1155,7 +1155,7 @@ function vWork(){
       '</span></span><span class="go">›</span></button>';
   });
   h+='<button class="btn fill" data-act="split" data-id="'+w.id+'">話に分ける・日付を振る</button>';
-  h+='<button class="btn" data-act="new-ep" data-id="'+w.id+'">出しおわった話を登録する</button>';
+  h+='<button class="btn" data-act="new-ep" data-id="'+w.id+'">この作品で、もう出した話を入れる</button>';
   h+='</section>';
   h+='<button class="btn danger" data-act="del-work" data-id="'+w.id+'">この作品と話を消す</button>';
   return h;
@@ -1358,8 +1358,8 @@ function vSched(){
   var s=stats();
   var posted=S.episodes.filter(function(e){return e.posted});
   h+='<div class="note" style="padding:4px 0 10px">予約ずみ '+s.days+'日ぶん　／　仕込み待ち '+s.waiting+'本　／　公開ずみ '+posted.length+'本</div>';
-  h+='<button class="btn" data-act="new-ep" style="margin-top:0">pixivに出しおわった話を登録する</button>';
-  h+='<div class="hint">もう公開してある話は、こちらから入れてください。日付をさかのぼって入れられます。</div>';
+  h+='<button class="btn" data-act="new-ep" style="margin-top:0">もうpixivに出した話を入れる</button>';
+  h+='<div class="hint">これから予約する話ではなく、<b>すでにpixivで公開ずみの話</b>を、あとから台帳に加えます。日付はさかのぼって入れられます。</div>';
   ensureCovers(future.filter(function(e){return e.hasCover}).slice(0,20).map(function(e){return e.id}));
   h+='<section><h2>これから<span class="n">'+future.length+'本</span></h2>';
   if(!future.length)h+='<div class="empty">日付の入った話がありません。</div>';
@@ -1483,7 +1483,7 @@ function prevEp(e){
 function vNewEp(){
   var f=view.form||{};
   var h='<button class="back" data-act="back">‹ もどる</button>';
-  h+='<section><h2>出しおわった話を登録する</h2>';
+  h+='<section><h2>もうpixivに出した話を入れる</h2>';
 
   /* 入ったものを、目のあるところに置く */
   if(view.added&&view.added.length){
@@ -1504,8 +1504,10 @@ function vNewEp(){
     });
     h+='</div>';
   }else{
-    h+='<div class="note" style="padding:0 0 8px">もうpixivに出してある話を、あとから台帳に入れます。'+
-       '検査ずみ・予約ずみ・公開ずみの印が最初から立ちます。</div>';
+    h+='<div class="note" style="padding:0 0 10px">'+
+       '<b>すでにpixivで公開ずみの話</b>を、あとから台帳に加えるところです。'+
+       'これから出す話は、作品の画面の「話に分ける・日付を振る」から入れてください。<br>'+
+       '入れると、検査ずみ・予約ずみ・公開ずみの三つが最初から立ちます。</div>';
   }
 
   h+='<label class="field"><span>どの作品の話か</span><select id="neWork">'+
