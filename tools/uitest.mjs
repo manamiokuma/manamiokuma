@@ -611,6 +611,25 @@ await step("区切りを割り直しても直しは残る", async () => {
   must(body.includes("雨が降りつづいていた"), "割り直しで直しが消えた");
   p.off("dialog", onDialog);
 });
+await step("過去の直しを持ち越すと、いまの原稿に先回りの鉛筆が引かれる", async () => {
+  await p.click("#o-back");                     /* 直前の段は書き出す画面で終わる */
+  await p.click("#btn-conf2");
+  await p.setInputFiles("#m-file-a", { name: "旧作_納品.txt", mimeType: "text/plain",
+    buffer: Buffer.from("　窓の外は白く煙っていた。\n　雨は白く降りつづけた。\n　彼は黙っていた。") });
+  await p.setInputFiles("#m-file-b", { name: "旧作_刊行.txt", mimeType: "text/plain",
+    buffer: Buffer.from("　窓の外は煙っていた。\n　雨は降りつづけた。\n　彼は黙っていた。") });
+  must((await p.inputValue("#m-title")) === "旧作_納品", "作品名が入らない");
+  await p.fill("#m-title", "旧作");
+  await p.click("#m-go");
+  await p.waitForTimeout(300);
+  must((await p.textContent("#m-list")).includes("旧作"), "持ち越しの一覧に出ない");
+  await p.click("#c-back");
+  await p.click("#btn-go");
+  const msgs = await p.locator(".pen-msg").allTextContents();
+  must(msgs.some(m => m.includes("よく削る「白く」")), "持ち越しから先回りが引かれない: " + msgs.join(" | "));
+  await p.click("#r-back");
+  await p.click("#btn-out");                    /* 次の段は書き出す画面から始まる */
+});
 await step("画面の絵を撮る", async () => {
   await p.click("#o-back");
   await p.screenshot({ path: "tools/tmp-work.png" });

@@ -408,6 +408,39 @@ run("設定で止められる", () => {
   ev("conf.mine = true; buildMine(); cur = null; curId = null");
 });
 
+console.log("\n過去の直しの持ち越し");
+const 対 = (a, b) => ev(`alignPairs(sentencesOf(${JSON.stringify(a)}), sentencesOf(${JSON.stringify(b)}))`);
+run("二つの版を文で突き合わせて、変わった文の対だけを取り出す", () => {
+  const pairs = 対("　彼は静かに窓を閉めた。\n　雨はまだ降っていた。\n「行くのか」\n　その事について、彼は何も言わなかったのだった。\n　塔は町の外れに立っていた。",
+                  "　窓を閉めた。\n　雨はまだ降っていた。\n「行くのか」\n　そのことについて、彼は何も言わなかった。\n　塔は町の外れに立っていた。");
+  eq(pairs.length, 2, "変わった文の数: " + JSON.stringify(pairs));
+  eq(pairs[0].o, "彼は静かに窓を閉めた。"); eq(pairs[0].n, "窓を閉めた。");
+  eq(pairs[1].o, "その事について、彼は何も言わなかったのだった。");
+});
+run("文が増えたり消えたりしても組み違えない", () => {
+  const pairs = 対("一つ目。\n二つ目。\n三つ目。\n四つ目。", "一つ目。\n三つ目。\n四つ目に足した。\n五つ目。");
+  truthy(pairs.some(x => x.o === "二つ目。" && x.n === ""), "消えた文を拾えない: " + JSON.stringify(pairs));
+  truthy(pairs.some(x => x.o === "四つ目。" && x.n === "四つ目に足した。"), "似た文を組めない: " + JSON.stringify(pairs));
+  truthy(pairs.some(x => x.o === "" && x.n === "五つ目。"), "増えた文を拾えない");
+});
+run("持ち越した直しから、新しい原稿に先回りの鉛筆が引かれる", () => {
+  ev("memory = []; cur = null; curId = null");
+  const n = ev(`importPairs(${JSON.stringify("　彼は静かに窓を閉めた。\n　彼は静かに扉を押した。")}, ${JSON.stringify("　窓を閉めた。\n　扉を押した。")}, "旧作")`);
+  eq(n, 2, "持ち越した数");
+  ev(`__n = {v:2, id:"n", title:"新作", blocks: cutBlocks("　彼は静かに息を吐いた。それから歩き出した。", 2200), pass:1, kind:"typo", log:[], history:[]}; migrate(__n); cur = __n; curId = "n"; index = []; buildMine()`);
+  eq(ev("mineCache.length"), 1, "持ち越しから鉛筆ができない");
+  const r = ev("readBlock(cur.blocks[0], null)");
+  truthy(r[0] && r[0].some(x => x.id.indexOf("mine:") === 0), "新しい原稿の一行目に引かれない: " + JSON.stringify(r));
+  truthy(!r[1], "形のない行にまで引いている");
+});
+run("同じ作品を入れ直すと置き換わり、外すと消える", () => {
+  ev(`importPairs(${JSON.stringify("あ。\nい。")}, ${JSON.stringify("あ。\nう。")}, "旧作")`);
+  eq(ev("memory.length"), 1, "入れ直しで二重になっている");
+  ev(`memory = memory.filter(x => x.w !== "旧作"); buildMine()`);
+  eq(ev("mineCache.length"), 0, "外しても鉛筆が残る");
+  ev("memory = []; cur = null; curId = null");
+});
+
 console.log("\n締め切りと見通し");
 const 日 = n => { const d = new Date(); d.setDate(d.getDate() - n);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };

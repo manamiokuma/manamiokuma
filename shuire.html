@@ -68,7 +68,7 @@
   .due .now{font-size:12.5px;color:var(--dim);line-height:1.9;font-variant-numeric:tabular-nums}
   .due .now b{font-family:var(--mincho);font-size:15px;color:var(--kami);font-weight:600}
   .due .hint2{font-size:12px;color:var(--dim);line-height:1.8;margin:5px 0 0}
-  .duebtn{font-size:12.5px;color:var(--dim);border:1px solid var(--ai3);border-radius:2px;padding:7px 12px;background:var(--ai2)}
+  .duebtn{font-size:12.5px;color:var(--dim);border:1px solid var(--ai3);border-radius:2px;padding:7px 12px;background:var(--ai2);white-space:nowrap}
   .duebtn:hover{color:var(--kami);border-color:var(--dim)}
   .due input[type=date]{font-size:15px;padding:9px;border:1px solid var(--ai3);border-radius:2px;background:var(--ai2);color:var(--kami);font-family:var(--gothic)}
   /* 見通し */
@@ -411,6 +411,17 @@
     <p class="cat-h">きょうの分</p>
     <div class="field" style="margin-top:8px"><label for="c-quota">一日にこれだけ読めたら上出来、という区切り数</label><input id="c-quota" type="number" inputmode="numeric"></div>
     <p class="hint" style="margin:0 0 4px">少なめに決めておくのがこつです。三区切りでおよそ三十分。締め切りを決めた原稿があるときは、そちらから逆算した数が優先されます。</p>
+    <p class="cat-h">過去の直しを持ち越す</p>
+    <p class="hint" style="margin:0 0 10px">同じ作品の「直す前」と「直した後」（納品稿と刊行版など）を入れると、文の単位で突き合わせて、朱入れの中で直したのと同じ材料にします。作品をまたいで効くので、新しい原稿の一行目から先回りします。この端末の中だけに置かれ、どこにも送りません。</p>
+    <div class="field"><label for="m-title">作品名</label><input id="m-title" placeholder="端境の潜熱"></div>
+    <div class="row">
+      <button class="go quiet" id="m-pick-a">直す前を選ぶ</button>
+      <button class="go quiet" id="m-pick-b">直した後を選ぶ</button>
+    </div>
+    <input id="m-file-a" type="file" accept=".docx,.txt,.md" hidden><input id="m-file-b" type="file" accept=".docx,.txt,.md" hidden>
+    <p class="hint" id="m-stat" style="margin:7px 0 10px">まだ選んでいません</p>
+    <button class="go" id="m-go">突き合わせて持ち越す</button>
+    <div id="m-list" style="margin-top:12px"></div>
     <p class="cat-h">自分の直しから作る鉛筆</p>
     <button class="sw" id="c-mine"><i></i><div><b>同じ直しを二回したら、次から先回りする</b><span>行を直した記録から「よく削る語」「よく言い換える語」を拾い、その形が残っている行に鉛筆を引きます。通しの種類にかかわらず出ます</span></div></button>
     <p class="cat-h">下読み</p>
@@ -437,7 +448,8 @@
    人が入れるのが「朱」、機械が引くのが「鉛筆」。
    ============================================================ */
 
-const K_INDEX="shuire:index", K_DAILY="shuire:daily", K_CONF="shuire:conf";
+const K_INDEX="shuire:index", K_DAILY="shuire:daily", K_CONF="shuire:conf", K_MEMORY="shuire:memory";
+let memory=[];                                   /* 過去の直しの持ち越し [{o,n,w,at}] */
 const $=id=>document.getElementById(id);
 const mem={};
 
@@ -1157,7 +1169,7 @@ function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rule
   delete conf.autoWord;
   if(!conf.quota) conf.quota=3;
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
-  loadDir();
+  loadDir(); loadMemory();
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
 })();
@@ -1715,9 +1727,9 @@ function diffMoves(a,b){
   }
   return out;
 }
-function harvest(){
+function harvest(entries){
   const t={sub:{},tail:{},del:{},add:{}}, n={punct:0,rewrite:0,move:0,fix:0};
-  (cur.log||[]).forEach(l=>{
+  (entries||allEdits()).forEach(l=>{
     if(typeof l.o!=="string"||typeof l.n!=="string"||l.o===l.n) return;
     n.fix++;
     diffMoves(l.o,l.n).forEach(m=>{
@@ -1755,13 +1767,89 @@ function harvestText(){
   return out;
 }
 
+/* ---- 過去の直しの持ち越し（作品をまたぐ材料） ---- */
+function loadMemory(){ memory=jget(K_MEMORY)||[]; }
+function saveMemory(){ if(memory.length>4000) memory=memory.slice(memory.length-4000); jset(K_MEMORY,memory); }
+function sentencesOf(text){
+  return lines(String(text||"").replace(/\r\n?/g,"\n")).filter(x=>x!==null).map(x=>x.trim()).filter(Boolean);
+}
+function lcsLen(a,b){
+  const n=a.length, m=b.length; if(!n||!m) return 0;
+  if(n*m>40000){ let p=0; while(p<n&&p<m&&a[p]===b[p]) p++; return p; }
+  let prev=new Uint16Array(m+1), cur0=new Uint16Array(m+1);
+  for(let i=1;i<=n;i++){ for(let j=1;j<=m;j++) cur0[j]= a[i-1]===b[j-1]? prev[j-1]+1 : Math.max(prev[j],cur0[j-1]); const t=prev; prev=cur0; cur0=t; }
+  return prev[m];
+}
+const sim=(a,b)=>(a===b)?1:(lcsLen(a,b)*2/(a.length+b.length));
+function longestIncreasing(seq){                 /* seq: [{i,j}] i は昇順。j が昇順になる最長の列 */
+  const tails=[], prevIdx=new Array(seq.length), tailIdx=[];
+  for(let k=0;k<seq.length;k++){
+    const v=seq[k].j; let lo=0, hi=tails.length;
+    while(lo<hi){ const mid=(lo+hi)>>1; if(tails[mid]<v) lo=mid+1; else hi=mid; }
+    tails[lo]=v; tailIdx[lo]=k; prevIdx[k]= lo? tailIdx[lo-1] : -1;
+  }
+  const out=[]; let k=tailIdx.length? tailIdx[tailIdx.length-1] : -1;
+  while(k>=0){ out.push(seq[k]); k=prevIdx[k]; }
+  return out.reverse();
+}
+/* 二つの版を文の単位で突き合わせ、変わった文の対を返す。
+   両方に一度きり現れる文を錨にして（patience diff）、錨の間を似た文どうしで組む */
+function alignPairs(A,B){
+  const out=[];
+  const region=(a0,a1,b0,b1)=>{
+    while(a0<a1&&b0<b1&&A[a0]===B[b0]){ a0++; b0++; }
+    while(a0<a1&&b0<b1&&A[a1-1]===B[b1-1]){ a1--; b1--; }
+    const da=A.slice(a0,a1), db=B.slice(b0,b1), used=new Array(db.length).fill(false);
+    const win = (da.length*db.length>20000)? 20 : Infinity;
+    da.forEach((sa,i)=>{
+      let best=-1, bs=0;
+      let bv=0;
+      db.forEach((sb,j)=>{
+        if(used[j]||Math.abs(i-j)>win) return;
+        const v=sim(sa,sb);
+        let pf=0; while(pf<sa.length&&pf<sb.length&&sa[pf]===sb[pf]) pf++;   /* 頭が同じ文は、同じ文を直したものと見る */
+        const score=v+0.15*(pf/Math.max(1,Math.min(sa.length,sb.length)));
+        if(score>bs){ bs=score; bv=v; best=j; }
+      });
+      if(best>=0&&bv>=0.35){ used[best]=true; out.push({o:sa,n:db[best]}); } else out.push({o:sa,n:""});
+    });
+    db.forEach((sb,j)=>{ if(!used[j]) out.push({o:"",n:sb}); });
+  };
+  const rec=(a0,a1,b0,b1)=>{
+    if(a0>=a1&&b0>=b1) return;
+    if(a0>=a1){ for(let j=b0;j<b1;j++) out.push({o:"",n:B[j]}); return; }
+    if(b0>=b1){ for(let i=a0;i<a1;i++) out.push({o:A[i],n:""}); return; }
+    const ca={}, cb={};
+    for(let i=a0;i<a1;i++) ca[A[i]]=(ca[A[i]]||0)+1;
+    for(let j=b0;j<b1;j++) cb[B[j]]=(cb[B[j]]||0)+1;
+    const posB={}; for(let j=b0;j<b1;j++) if(cb[B[j]]===1&&ca[B[j]]===1) posB[B[j]]=j;
+    const seq=[]; for(let i=a0;i<a1;i++) if(posB[A[i]]!==undefined) seq.push({i:i,j:posB[A[i]]});
+    const lis=longestIncreasing(seq);
+    if(!lis.length){ region(a0,a1,b0,b1); return; }
+    let pa=a0, pb=b0;
+    lis.forEach(m=>{ rec(pa,m.i,pb,m.j); pa=m.i+1; pb=m.j+1; });
+    rec(pa,a1,pb,b1);
+  };
+  rec(0,A.length,0,B.length);
+  return out.filter(x=>x.o!==x.n);
+}
+function importPairs(before,after,work){
+  const pairs=alignPairs(sentencesOf(before),sentencesOf(after));
+  const at=Date.now(), w=(work||"").trim()||"無題";
+  memory=memory.filter(x=>x.w!==w);           /* 同じ作品を入れ直したら置き換える */
+  pairs.forEach(x=>memory.push({o:x.o,n:x.n,w:w,at:at}));
+  saveMemory();
+  return pairs.length;
+}
+function allEdits(){ return (cur&&cur.log?cur.log:[]).concat(memory); }
+
 /* 自分の直しから作る鉛筆。同じ直しを二回以上したら、その形が残っている行に線を引く。
    汎用の禁則ではなく、この原稿で自分がやっている直しから作るので manuscript-qa と重ならない */
 let mineCache=[];
 function buildMine(){
   mineCache=[];
   if(!cur||conf.mine===false) return;
-  const h=harvest();
+  const h=harvest(allEdits());
   const seen={};
   harvestRows(h,2).forEach(x=>{
     const a = x.k.split(" → ")[0];
@@ -1790,8 +1878,9 @@ function renderReport(){
   $("rp-lead").textContent= conf.pen===true? "上は、あなたが実際に直したことの傾向。下は、機械が拾える指摘の残り。" : "あなたが実際に直したことの傾向です。";
   const cats=conf.pen===true? ["hyoki","buntai","seigou"] : [];
   let html="";
-  const h=harvest(), cand=harvestRows(h,2), once=harvestRows(h,1).filter(x=>x.n<2);
-  html+='<p class="cat-h">直しの傾向　'+h.n.fix+'行</p>';
+  const h=harvest(allEdits()), cand=harvestRows(h,2), once=harvestRows(h,1).filter(x=>x.n<2);
+  const mine=harvest(cur.log||[]).n.fix, works=[...new Set(memory.map(x=>x.w))];
+  html+='<p class="cat-h">直しの傾向　この作品 '+mine+'行'+(memory.length? '　持ち越し '+memory.length+'件（'+works.length+'作品）' : '')+'</p>';
   if(!h.n.fix){
     html+='<p class="lead">行を直すと、ここに「何を削り、何に言い換えたか」が集まります。同じ直しが二回出たら、その形が残っている行に鉛筆が引かれます。</p>';
   }else{
@@ -1865,6 +1954,7 @@ function renderConf(){
   $("c-when").querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ conf.wordWhen=b.dataset.w; saveConf(); renderConf(); });
   $("c-mine").classList.toggle("on",conf.mine!==false);
   $("c-pen").classList.toggle("on",conf.pen===true);
+  renderMemList(); memStat();
   $("c-dir").classList.toggle("hide",!canDir());
   $("c-dirstat").textContent = !canDir()
     ? "この端末ではフォルダを選べません。控えはいつもの場所へダウンロードされ、同じ名前のファイルが増えていきます。"
@@ -1905,17 +1995,21 @@ $("ab-body").innerHTML=
 /* ============================================================
    つなぎ込み
    ============================================================ */
+async function readAnyFile(f){
+  let text;
+  if(/\.docx$/i.test(f.name)){
+    if(typeof DecompressionStream==="undefined") throw new Error("この端末ではdocxを開けません。本文を貼りつけてください");
+    text=xmlToText(await readDocx(await f.arrayBuffer()));
+  }else{ text=await f.text(); }
+  if(!text.trim()) throw new Error("本文が空でした");
+  return text;
+}
 $("a-pick").onclick=()=>$("a-file").click();
 $("a-file").onchange=async e=>{
   const f=e.target.files&&e.target.files[0]; if(!f) return;
   const stat=$("a-filestat"); stat.textContent="読み込んでいます…";
   try{
-    let text;
-    if(/\.docx$/i.test(f.name)){
-      if(typeof DecompressionStream==="undefined") throw new Error("この端末ではdocxを開けません。本文を貼りつけてください");
-      text=xmlToText(await readDocx(await f.arrayBuffer()));
-    }else{ text=await f.text(); }
-    if(!text.trim()) throw new Error("本文が空でした");
+    const text=await readAnyFile(f);
     $("a-body").value=text;
     if(!$("a-title").value.trim()) $("a-title").value=f.name.replace(/\.(docx|txt|md)$/i,"");
     stat.textContent=f.name+"　"+text.length.toLocaleString()+"字を読み込みました";
@@ -1935,6 +2029,34 @@ $("c-back").onclick=()=>{ if(cur){ renderWork(); view("work"); } else { renderHo
 $("ab-back").onclick=()=>{ renderHome(); view("home"); };
 $("btn-conf").onclick=renderConf;
 $("c-dir").onclick=pickDir;
+let memA=null, memB=null;
+function memStat(){
+  $("m-stat").textContent = (memA?"直す前："+memA.name+"　":"")+(memB?"直した後："+memB.name:"")||"まだ選んでいません";
+}
+$("m-pick-a").onclick=()=>$("m-file-a").click();
+$("m-pick-b").onclick=()=>$("m-file-b").click();
+$("m-file-a").onchange=async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+  try{ memA={name:f.name,text:await readAnyFile(f)}; if(!$("m-title").value.trim()) $("m-title").value=f.name.replace(/\.(docx|txt|md)$/i,""); }
+  catch(err){ toast(err.message||"読み込めませんでした"); } memStat(); e.target.value=""; };
+$("m-file-b").onchange=async e=>{ const f=e.target.files&&e.target.files[0]; if(!f) return;
+  try{ memB={name:f.name,text:await readAnyFile(f)}; }catch(err){ toast(err.message||"読み込めませんでした"); } memStat(); e.target.value=""; };
+$("m-go").onclick=()=>{
+  if(!memA||!memB){ toast("直す前と直した後の両方を選んでください"); return; }
+  const n=importPairs(memA.text,memB.text,$("m-title").value);
+  memA=null; memB=null; memStat(); renderMemList();
+  buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats);
+  toast(n? n+"件の直しを持ち越しました" : "変わっている文が見つかりませんでした");
+};
+function renderMemList(){
+  const by={}; memory.forEach(x=>{ by[x.w]=(by[x.w]||0)+1; });
+  const ws=Object.keys(by);
+  $("m-list").innerHTML = ws.length
+    ? '<table class="tally"><tbody>'+ws.map(w=>'<tr><td>'+esc(w)+'</td><td class="n">'+by[w]+'</td><td style="width:1%"><button class="duebtn" data-w="'+esc(w)+'">外す</button></td></tr>').join("")+'</tbody></table>'
+    : '<p class="hint">まだ持ち越しはありません。</p>';
+  $("m-list").querySelectorAll("button[data-w]").forEach(b=>b.onclick=()=>{
+    memory=memory.filter(x=>x.w!==b.dataset.w); saveMemory(); renderMemList(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats);
+  });
+}
 $("c-pen").onclick=()=>{ conf.pen=conf.pen!==true; saveConf(); renderConf(); };
 $("c-mine").onclick=()=>{ conf.mine=conf.mine===false; saveConf(); buildMine(); if(cur) penCache=readWork(cur,kindOf(cur.kind).cats); renderConf(); };
 $("btn-conf2").onclick=renderConf;
