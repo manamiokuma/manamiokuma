@@ -506,6 +506,45 @@ run("執筆に持っていく一枚に、出自と避けることが並ぶ", () 
   ev("memory = []; cur = null; curId = null");
 });
 
+console.log("\n種類でみた傾向");
+const 種 = (k, a, b) => ev(`moveKind({k:${JSON.stringify(k)}, a:${JSON.stringify(a)}, b:${JSON.stringify(b||"")}})`);
+run("削った語を種類に分ける", () => {
+  eq(種("del", "静かに"), "adv"); eq(種("del", "そっと"), "adv"); eq(種("del", "小さく"), "adv"); eq(種("del", "穏やかに"), "adv");
+  eq(種("del", "彼は"), "subj"); eq(種("del", "彼女の"), "subj");
+  eq(種("del", "そして"), "conj"); eq(種("del", "まるで夢のように"), "simile"); eq(種("del", "と思った"), "mind");
+  eq(種("del", "のだった"), "tailform"); eq(種("del", "が"), "particle"); eq(種("del", "手紙の端を"), "phrase");
+  eq(種("del", "窓に"), "phrase", "名詞＋に を副詞と取り違える");
+});
+run("言い換えと語尾を種類に分ける", () => {
+  eq(種("sub", "事", "こと"), "open"); eq(種("sub", "もの", "物"), "close"); eq(種("sub", "煙って", "煙り"), "swap");
+  eq(種("tail", "のだった", ""), "tailform"); eq(種("tail", "った", "う"), "tail");
+  eq(種("punct", "、", ""), "punctdel"); eq(種("punct", "", "、"), "punctadd");
+});
+run("ばらばらの直しでも、種類で束ねると傾向になる", () => {
+  ev("memory = []; cur = null; curId = null");
+  ev(`importMemo(${JSON.stringify("静かに を削除\nそっと を削除\n小さく を削除\n彼は を削除")}, "旧作B")`);
+  const h = ev("harvest(allEdits())");
+  eq(ev("harvestRows(harvest(allEdits()), 2).length"), 0, "同じ文字列はないので規則候補は立たない");
+  const tr = ev("trendRows(harvest(allEdits()))");
+  eq(tr[0].id, "adv"); eq(tr[0].n, 3, "副詞を削る 3回");
+  eq(tr[0].ex.map(e => e.k).sort().join("／"), ["静かに","そっと","小さく"].sort().join("／"), "例が三つそろわない");
+});
+run("傾向が三回以上なら、一回きりの語にも鉛筆が引かれる", () => {
+  ev(`__t2 = {v:2, id:"t2", title:"新作", blocks: cutBlocks("　彼はそっと扉を押した。彼は何も言わなかった。", 2200), pass:1, kind:"typo", log:[], history:[]}; migrate(__t2); cur = __t2; curId = "t2"; index = []; buildMine()`);
+  const names = ev("mineCache.map(x => x.name)");
+  truthy(names.some(x => x.indexOf("副詞を削る傾向「そっと」") === 0), "傾向の鉛筆がない: " + JSON.stringify(names));
+  truthy(!names.some(x => x.indexOf("彼は") >= 0), "一回きりの主語（傾向は1回）にまで鉛筆を作っている");
+  const r = ev("readBlock(cur.blocks[0], null)");
+  truthy(r[0] && r[0].some(x => x.msg.indexOf("副詞を削る傾向「そっと」") === 0), "本文に引かれない: " + JSON.stringify(r));
+  truthy(!r[1], "関係ない行に引いている");
+});
+run("執筆に持っていく一枚と回収の書き出しに、傾向が載る", () => {
+  const c = ev("carryText()");
+  truthy(c.indexOf("傾向（三回以上）") >= 0 && /副詞を削る　3回（[^）]*静かに[^）]*）/.test(c) && /そっと/.test(c) && /小さく/.test(c), "傾向が載らない: " + c);
+  truthy(ev("harvestText()").indexOf("【種類でみた傾向】") >= 0, "回収に傾向がない");
+  ev("memory = []; cur = null; curId = null");
+});
+
 console.log("\n締め切りと見通し");
 const 日 = n => { const d = new Date(); d.setDate(d.getDate() - n);
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };

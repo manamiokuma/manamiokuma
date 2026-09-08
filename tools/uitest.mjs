@@ -634,17 +634,32 @@ await step("差分メモを貼っても持ち越せる", async () => {
   await p.click("#o-back");
   await p.click("#btn-conf2");
   await p.fill("#m-title", "メモの作品");
-  await p.fill("#m-memo", "- 塔 を削除　×3\n・煙って → 煙り　2件\nただの説明の行");
+  await p.fill("#m-memo", "- 塔 を削除　×3\n・煙って → 煙り　2件\n静かに を削除\nそっと を削除\nただの説明の行");
   await p.click("#m-memo-go");
   await p.waitForTimeout(300);
   const st = await p.textContent("#m-memo-stat");
-  must(st.includes("5件を持ち越しました"), "件数が違う: " + st);
+  must(st.includes("7件を持ち越しました"), "件数が違う: " + st);
   must(st.includes("読めなかった行 1"), "読めなかった行を伝えていない: " + st);
   must((await p.textContent("#m-list")).includes("メモの作品"), "一覧に出ない");
   await p.click("#c-back");
   await p.click("#btn-go");
   const msgs = await p.locator(".pen-msg").allTextContents();
   must(msgs.some(m => m.includes("よく削る「塔」")) || msgs.some(m => m.includes("煙って")), "メモから先回りが引かれない: " + msgs.join(" | "));
+  await p.click("#r-back");
+  await p.click("#btn-out");
+});
+await step("ばらばらの直しでも、種類で束ねた傾向が出て先回りする", async () => {
+  await p.click("#o-back");
+  await p.click("#btn-report");
+  const t = await p.textContent("#rp-body");
+  must(t.includes("種類でみた傾向"), "種類の表が出ない");
+  must(t.includes("副詞を削る"), "副詞の傾向が出ない: " + t.slice(0, 300));   /* 白く×2（持ち越し）＋静かに＋そっと＝4 */
+  must(/副詞を削る[^]*?先回り/.test(t), "三回以上なのに先回りの印が付かない");
+  await p.click("#rp-back");
+  await p.click("#btn-go");
+  const msgs = await p.locator(".pen-msg").allTextContents();
+  /* 「白く」は同じ直しとしても二回そろっているので、そちらの名前で先に引かれる。どちらの名前でも「白く」に線があればよい */
+  must(msgs.some(m => m.includes("「白く」")), "傾向の鉛筆が引かれない: " + msgs.join(" | "));
   await p.click("#r-back");
   await p.click("#btn-out");
 });

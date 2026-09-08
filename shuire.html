@@ -1735,8 +1735,10 @@ function diffMoves(a,b){
   return out;
 }
 function harvest(entries){
-  const t={sub:{},tail:{},del:{},add:{}}, n={punct:0,rewrite:0,move:0,fix:0}, src={};
+  const t={sub:{},tail:{},del:{},add:{}}, n={punct:0,rewrite:0,move:0,fix:0}, src={}, trend={};
   const bump=(box,key,c,w)=>{ box[key]=(box[key]||0)+c; src[key]=src[key]||{}; src[key][w]=(src[key][w]||0)+c; };
+  const bumpT=(m,c,w)=>{ const id=moveKind(m); if(!id) return; const tt=trend[id]=trend[id]||{n:0,ex:{},src:{}}; tt.n+=c;
+    const label=(m.k==="sub"||m.k==="tail")&&m.b? m.a+" → "+m.b : (m.a||m.b||""); if(label&&label.length<=14) tt.ex[label]=(tt.ex[label]||0)+c; tt.src[w]=(tt.src[w]||0)+c; };
   (entries||allEdits()).forEach(l=>{
     if(typeof l.o!=="string"||typeof l.n!=="string"||l.o===l.n) return;
     if(l.auto) return;                                /* 機械がまとめて当てた分は、癖として数えない（自分で自分を育てない） */
@@ -1744,13 +1746,15 @@ function harvest(entries){
     const w=l.w||(cur?cur.title:"この作品");
     if(l.memo){                                       /* 差分メモは「直しそのもの」なので、そのまま数える */
       const c=l.c||1; n.move+=c;
-      if(l.o.length>12||l.n.length>12){ n.rewrite+=c; return; }
-      if(PUNCT.test(l.o+l.n)){ n.punct+=c; return; }
+      if(l.o.length>12||l.n.length>12){ n.rewrite+=c; bumpT({k:"rewrite",a:l.o,b:l.n},c,w); return; }
+      if(PUNCT.test(l.o+l.n)){ n.punct+=c; bumpT({k:"punct",a:l.o,b:l.n},c,w); return; }
       bump(l.n? t.sub : t.del, l.n? l.o+" → "+l.n : l.o, c, w);
+      bumpT({k:l.n?"sub":"del",a:l.o,b:l.n},c,w);
       return;
     }
     diffMoves(l.o,l.n).forEach(m=>{
       n.move++;
+      bumpT(m,1,w);
       if(m.k==="punct"){ n.punct++; return; }
       if(m.k==="rewrite"){ n.rewrite++; return; }
       const key = (m.k==="add")? m.b : (!m.b? m.a : m.a+" → "+m.b);   /* 語尾を丸ごと削ったときは言い換え先がない */
@@ -1759,9 +1763,61 @@ function harvest(entries){
     });
   });
   const sort=o=>Object.keys(o).map(k=>({k:k,n:o[k],src:src[k]||{}})).sort((x,y)=>y.n-x.n||x.k.localeCompare(y.k));
-  return {sub:sort(t.sub), tail:sort(t.tail), del:sort(t.del), add:sort(t.add), n:n, src:src};
+  return {sub:sort(t.sub), tail:sort(t.tail), del:sort(t.del), add:sort(t.add), n:n, src:src, trend:trend};
 }
 const CATN={sub:"言い換えた",tail:"語尾を直した",del:"削った",add:"足した"};
+/* 直しの一つひとつを種類に分ける。同じ文字列でなくても「副詞を削る」「主語を落とす」のように束ねるため */
+const ADV=["静かに","ゆっくりと","ゆっくり","そっと","わずかに","かすかに","小さく","少し","すこし","ふと","じっと","ただ","ひどく","深く","強く","軽く","ゆるやかに","穏やかに","ぼんやりと","はっきりと","確かに","たしかに","きっと","やはり","やっぱり","いつも","ずっと","すぐに","ようやく","ついに","もう","まだ","なお","さらに","いっそう","ますます","かなり","とても","非常に","実に","本当に","ほんとうに","どこか","なぜか","思わず","つい","ただただ","そのまま","しばらく","ゆっくりと"];
+const KJ=/[一-龠々]/;
+function moveKind(m){
+  const a=m.a||"", b=m.b||"";
+  if(m.k==="punct") return a? "punctdel" : "punctadd";
+  if(m.k==="rewrite") return "rewrite";
+  if(m.k==="add") return "add";
+  if(m.k==="tail") return /(のだ|のである|のです|のでした|わけだ|ということだ|のだろう)/.test(a)? "tailform" : "tail";
+  if(m.k==="sub"){
+    if(KJ.test(a)&&!KJ.test(b)&&b.length>=a.length) return "open";
+    if(!KJ.test(a)&&KJ.test(b)&&a.length>=b.length) return "close";
+    return "swap";
+  }
+  /* 削り */
+  if(/^(彼|彼女|自分|私|わたし|俺|僕|あなた|君|お前|あいつ|こいつ)(は|が|も|の|に|を|には|にも)?$/.test(a)) return "subj";
+  if(/^(そして|しかし|しかしながら|だが|だけど|けれど|けれども|でも|それから|やがて|そのとき|その時|ちょうど|すでに|そこで|だから|なぜなら|つまり|というのも|要するに|そのため|一方|ところが|ところで|たとえば|例えば|それでも|それに|そうして)、?$/.test(a)) return "conj";
+  if(/(まるで|あたかも|さながら)/.test(a)||/(のように|のような|みたいに|みたいな|かのように|ごとく)、?$/.test(a)) return "simile";
+  if(/(と思った|と思う|と思っていた|と感じた|と感じる|気がした|気がする|ような気|気持ちになった|感情|感覚|存在)/.test(a)) return "mind";
+  if(/^(のだった|のである|のだ|のです|のでした|わけだ|わけである|ということだ|ということだった|のだろう|のかもしれない)$/.test(a)) return "tailform";
+  if(ADV.indexOf(a.replace(/、$/,""))>=0||/^[ぁ-ん]{1,4}と$/.test(a)||/^[一-龠々]{1,2}く$/.test(a)||/(かに|やかに|らかに)$/.test(a)) return "adv";
+  if(a.length===1&&/^[はがもをにのへとでや]$/.test(a)) return "particle";
+  return "phrase";
+}
+const TREND={
+  adv:      {name:"副詞を削る",              pen:"has"},
+  subj:     {name:"主語・代名詞を落とす",     pen:"has"},
+  conj:     {name:"つなぎの言葉を落とす",     pen:"has"},
+  simile:   {name:"直喩を削る",              pen:"has"},
+  mind:     {name:"心理の名指しを削る",       pen:"has"},
+  tailform: {name:"説明の語尾を落とす",       pen:"tail"},
+  open:     {name:"漢字を開く",              pen:"has"},
+  close:    {name:"漢字を閉じる",            pen:"has"},
+  tail:     {name:"語尾を直す",              pen:null},
+  particle: {name:"助詞を落とす",            pen:null},
+  phrase:   {name:"語句を削る",              pen:null},
+  swap:     {name:"言い換える",              pen:null},
+  punctdel: {name:"読点を減らす",            pen:null},
+  punctadd: {name:"読点を増やす",            pen:null},
+  add:      {name:"言葉を足す（本人の領分）", pen:null},
+  rewrite:  {name:"書き直す",                pen:null}
+};
+const TREND_MIN=3;
+function trendRows(h){
+  return Object.keys(h.trend||{}).map(id=>{
+    const t=h.trend[id], ex=Object.keys(t.ex).map(k=>({k:k,n:t.ex[k]})).sort((x,y)=>y.n-x.n||x.k.localeCompare(y.k));
+    return {id:id,name:(TREND[id]||{name:id}).name,n:t.n,ex:ex,pen:(TREND[id]||{}).pen||null,src:t.src};
+  }).sort((x,y)=>y.n-x.n);
+}
+function trendLine(t,limit){
+  return t.name+"　"+t.n+"回"+(t.ex.length? "（"+t.ex.slice(0,limit||5).map(e=>e.k+(e.n>1?" "+e.n:"")).join("、")+(t.ex.length>(limit||5)?"、…":"")+"）" : "");
+}
 /* 規則候補を本文にまとめて当てる。語尾（活用が絡む）と一字のものは当てない。
    当てた行はふつうの直しとして残る（緑・控え・一行ずつ元に戻せる）が、癖としては数えない */
 function ruleHits(row){
@@ -1792,7 +1848,13 @@ function carryText(){
   const h=harvest(allEdits()), cand=harvestRows(h,2), works=[...new Set(memory.map(x=>x.w))];
   let out="【この書き手の直しの癖　執筆時に避けること】\n";
   out+="出自：朱入れ　"+jdate()+"　作品「"+cur.title+"」"+(works.length? "＋持ち越し（"+works.join("、")+"）" : "")+"\n";
-  if(!cand.length) return out+"（二回以上そろった直しは、まだありません）\n";
+  if(!cand.length && !trendRows(h).some(t=>t.n>=TREND_MIN&&t.id!=="add"&&t.id!=="rewrite")) return out+"（二回以上そろった直しも、三回以上の傾向も、まだありません）\n";
+  const tr=trendRows(h).filter(t=>t.id!=="add"&&t.id!=="rewrite"&&t.n>=TREND_MIN);
+  if(tr.length){
+    out+="\n傾向（三回以上）\n";
+    tr.forEach(t=>{ out+="・"+trendLine(t,8)+"\n"; });
+  }
+  out+="\n同じ直し（二回以上）\n";
   cand.forEach(x=>{
     const a=x.k.split(" → ")[0], b=x.k.split(" → ")[1]||"";
     const line = x.c==="del"? "「"+a+"」を書かない"
@@ -1817,6 +1879,8 @@ function harvestText(){
   out+="直した行 "+h.n.fix+"／直しの箇所 "+h.n.move+"\n\n";
   out+="頻度2以上を規則候補として並べます（manuscript-qa の差分回収と同じ数えかた）。\n";
   out+="読点の増減と語の足しは本人の領分なので、件数だけにしてあります。\n\n";
+  const tr=trendRows(h);
+  if(tr.length){ out+="【種類でみた傾向】\n"; tr.forEach(t=>{ out+="　"+trendLine(t,8)+"\n"; }); out+="\n"; }
   out+="【規則候補】同じ直しを二回以上\n";
   out+= cand.length? cand.map(x=>"　"+CATN[x.c]+"　"+x.k+"　"+x.n+"回").join("\n")+"\n" : "　まだありません\n";
   out+="\n【一度きり】参考\n";
@@ -1959,6 +2023,20 @@ function buildMine(){
         ? s=>{ const t=s.replace(/[。！？」』）\s]+$/,""); return t.slice(-(a.length+3)).indexOf(a)>=0? label : null; }
         : s=>s.indexOf(a)>=0? label : null });
   });
+  /* 種類として傾向が立っていれば、その種類の語は一回きりでも先回りする */
+  trendRows(h).forEach(t=>{
+    if(!t.pen||t.n<TREND_MIN) return;
+    t.ex.forEach(e=>{
+      const a=e.k.split(" → ")[0];
+      if(!a||a.length<2||a.length>12||seen[a]) return;
+      seen[a]=true;
+      const label=t.name+"傾向「"+a+"」（"+t.n+"回）";
+      mineCache.push({id:"mine:t:"+t.id+":"+a, cat:"mine", name:label, desc:"", kind:"trend", a:a,
+        f: t.pen==="tail"
+          ? s=>{ const x=s.replace(/[。！？」』）\s]+$/,""); return x.slice(-(a.length+3)).indexOf(a)>=0? label : null; }
+          : s=>s.indexOf(a)>=0? label : null });
+    });
+  });
 }
 
 /* ============================================================
@@ -1980,6 +2058,17 @@ function renderReport(){
     html+='<p class="lead">行を直すと、ここに「何を削り、何に言い換えたか」が集まります。同じ直しが二回出たら、その形が残っている行に鉛筆が引かれます。</p>';
   }else{
     html+='<p class="lead">同じ直しを二回以上したものを規則候補として並べます。読点の増減と語の足しは本人の領分なので数えません。</p>';
+    const tr=trendRows(h).filter(t=>t.id!=="add"&&t.id!=="rewrite");
+    if(tr.length){
+      const top=tr[0].n;
+      html+='<p class="cat-h" style="font-size:13px">種類でみた傾向</p><table class="tally"><tbody>'+
+        tr.map(t=>'<tr><td>'+esc(t.name)+(t.pen&&t.n>=TREND_MIN?'　<span style="font-size:11px;color:var(--fusen)">先回り</span>':'')+
+          '<div class="gauge"><i style="width:'+Math.round(t.n/top*100)+'%"></i></div>'+
+          (t.ex.length?'<div style="font-size:11.5px;color:var(--dim);margin-top:4px">'+esc(t.ex.slice(0,6).map(e=>e.k+(e.n>1?" "+e.n:"")).join("、"))+(t.ex.length>6?"、…":"")+'</div>':'')+
+          '</td><td class="n">'+t.n+'</td></tr>').join("")+'</tbody></table>'+
+        '<p class="hint" style="margin:6px 0 12px">「先回り」の付いた種類は、三回以上そろっているので、その種類の語は一回きりでも鉛筆になります。</p>';
+    }
+    html+='<p class="cat-h" style="font-size:13px">同じ直し（規則候補）</p>';
     lastCand=cand;
     html+='<table class="tally"><tbody>'+
       (cand.length? cand.map((x,i)=>{ const r=ruleHits(x), hits=r?r.hits.length:0;
