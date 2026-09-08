@@ -296,6 +296,8 @@
     <button class="go quiet" id="btn-talk" style="margin-top:9px">付箋をClaudeに相談する</button>
     <div class="stat" id="w-stat"></div>
     <div class="log" id="w-log"></div>
+    <p class="eta" id="w-word" style="margin:16px 0 0"></p>
+    <button class="go quiet" id="btn-word">いま控えを取る</button>
     <button class="go quiet" id="btn-close" style="margin-top:16px"></button>
     <div class="foot"><button id="btn-del" style="color:#8d9bab">この原稿を消す</button><button id="btn-resize">区切りを割り直す</button><button id="btn-conf2">設定</button></div>
   </section>
@@ -399,8 +401,9 @@
   <section id="v-conf" class="hide">
     <div class="brand"><h1 class="sub-h">設定</h1><button id="c-back">戻る</button></div>
     <p class="cat-h" style="margin-top:0">Wordへの控え</p>
-    <button class="sw" id="c-auto"><i></i><div><b>区切りを読み終えるたびにWordへ</b><span>その区切りの本文（直し反映・朱は赤・付箋は山吹）と控えを、一区切りずつ書き出します。端末のデータが消えても、Wordの側に残ります</span></div></button>
-    <button class="go quiet" id="c-dir" style="margin-top:11px">書き出し先のフォルダを選ぶ</button>
+    <p class="hint" style="margin:0 0 10px">作品まるごとを一つのWordに控えます（<b>作品名_控え.docx</b>）。本文は直しを反映し、直した行は緑、朱は赤、付箋は山吹。各区切りの控え（もと→直し・付箋と手触り・覚え書き）も入ります。端末のデータが消えても、Wordの側に残ります。</p>
+    <div class="picks" id="c-when"></div>
+    <button class="go quiet" id="c-dir">控えの置き場（フォルダ）を選ぶ</button>
     <p class="hint" id="c-dirstat" style="margin:7px 0 4px"></p>
     <p class="cat-h">きょうの分</p>
     <div class="field" style="margin-top:8px"><label for="c-quota">一日にこれだけ読めたら上出来、という区切り数</label><input id="c-quota" type="number" inputmode="numeric"></div>
@@ -892,6 +895,10 @@ function renderWork(){
   sealNew=false;
   $("btn-close").textContent = cur.closed? "校了を取り消す" : "校了にする";
   renderLog();
+  const n=cur.blocks.filter(b=>b.done).length;
+  $("w-word").innerHTML = cur.wordAt
+    ? "Wordの控え："+jstamp(cur.wordAt)+"　"+(cur.wordDone||0)+"区切りぶん"+(wordStale()? "　<b>いまの朱入れはまだ控えていません</b>" : "　最新です")
+    : (n? "<b>Wordの控えがまだありません</b>" : "");
   const f=firstUndone();
   $("btn-go").textContent = cur.closed? "もう一度読む" : (f<0? "はじめから読み直す" : (cur.blocks.some(b=>b.done)? "つづきを読む（"+(f+1)+"区切り目）" : "読みはじめる"));
   const notes=cur.blocks.filter(b=>b.note.trim()).length;
@@ -1118,13 +1125,15 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("veil").classLi
 /* ============================================================
    起動
    ============================================================ */
-function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, cpm:200, autoWord:true, quota:3, last:null}; }
+function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, cpm:200, wordWhen:"leave", quota:3, last:null}; }
 (function boot(){
   conf=jget(K_CONF)||defaultConf();
   conf.rules=conf.rules||{}; RULES.forEach(x=>{ if(conf.rules[x.id]===undefined) conf.rules[x.id]=true; });
-  if(conf.autoWord===undefined) conf.autoWord=true;
+  if(!conf.wordWhen) conf.wordWhen = (conf.autoWord===false? "manual" : "leave");   /* 旧い設定からの移行 */
+  delete conf.autoWord;
   if(!conf.quota) conf.quota=3;
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
+  loadDir();
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
 })();
@@ -1220,32 +1229,56 @@ function save(bytes,name,mime,quiet){
   setTimeout(()=>URL.revokeObjectURL(u),4000);
   if(!quiet) toast("書き出しました　"+name);
 }
-/* 区切りごとの控えの置き場。フォルダを選んでおけば同じ名前で上書きしていく */
+/* 控えの置き場。フォルダを一度決めておけば、同じ一つのファイルに上書きしていく。
+   フォルダの取っ手はこの端末の中（IndexedDB）に覚えておく */
 let outDir=null;
 const canDir=()=>typeof window.showDirectoryPicker==="function";
+function idb(){
+  return new Promise((ok,ng)=>{
+    const r=indexedDB.open("shuire",1);
+    r.onupgradeneeded=()=>r.result.createObjectStore("kv");
+    r.onsuccess=()=>ok(r.result); r.onerror=()=>ng(r.error);
+  });
+}
+async function idbSet(k,v){ const d=await idb(); return new Promise((ok,ng)=>{ const t=d.transaction("kv","readwrite"); t.objectStore("kv").put(v,k); t.oncomplete=()=>ok(); t.onerror=()=>ng(t.error); }); }
+async function idbGet(k){ const d=await idb(); return new Promise((ok,ng)=>{ const t=d.transaction("kv","readonly"), q=t.objectStore("kv").get(k); q.onsuccess=()=>ok(q.result); q.onerror=()=>ng(q.error); }); }
+async function loadDir(){ try{ const h=await idbGet("dir"); if(h) outDir=h; }catch(e){} }
 async function pickDir(){
-  if(!canDir()){ toast("この端末ではフォルダを選べません。書き出しはダウンロードになります"); return; }
-  try{ outDir=await window.showDirectoryPicker({mode:"readwrite"}); toast("書き出し先を決めました"); }
-  catch(e){ return; }
+  if(!canDir()){ toast("この端末ではフォルダを選べません。控えはダウンロードになります"); return; }
+  try{
+    outDir=await window.showDirectoryPicker({mode:"readwrite"});
+    try{ await idbSet("dir",outDir); }catch(e){}
+    toast("控えの置き場を決めました");
+  }catch(e){ return; }
   renderConf();
 }
+async function dirOk(){
+  if(!outDir) return false;
+  try{
+    if(outDir.queryPermission){
+      let st=await outDir.queryPermission({mode:"readwrite"});
+      if(st!=="granted") st=await outDir.requestPermission({mode:"readwrite"});
+      if(st!=="granted"){ outDir=null; return false; }
+    }
+    return true;
+  }catch(e){ outDir=null; return false; }
+}
 async function writeOut(bytes,name){
-  if(outDir){
+  if(await dirOk()){
     try{
       const fh=await outDir.getFileHandle(name,{create:true});
       const w=await fh.createWritable();
       await w.write(bytes); await w.close();
       return "folder";
-    }catch(e){ outDir=null; }      /* 権限が切れたらダウンロードに戻す */
+    }catch(e){ outDir=null; }
   }
   save(bytes,name,null,true);
   return "download";
 }
-/* 一区切りぶんの控え。本文（直し反映・朱は赤・付箋は山吹）と、その区切りの控え */
-function blockDocx(i){
+/* 一区切りぶんの段落。本文（直し反映・朱は赤・付箋は山吹）と、その区切りの控え */
+function blockParas(i){
   const b=cur.blocks[i], ls=lines(b.t);
-  const ps=[para([{t:cur.title,b:true,sz:28}],true),
-            para([{t:(i+1)+"区切り目　"+jdate()+"　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）",sz:18,color:GRAY}])];
+  const ps=[para([{t:"――― "+(i+1)+"区切り目"+(b.done?"　朱入れ済み":"")+" ―――",sz:16,color:GRAY}],true)];
   let buf=[];
   const flush=()=>{ if(buf.length){ ps.push(para(buf)); buf=[]; } };
   ls.forEach((x,k)=>{
@@ -1269,15 +1302,32 @@ function blockDocx(i){
       else ps.push(para([{t:"覚 "+r[1],sz:18}]));
     });
   }
+  return ps;
+}
+/* 作品まるごとの控え。ファイルは一つで、そのつど上書きしていく */
+function wholeDocx(){
+  const ps=[para([{t:cur.title,b:true,sz:30}],true),
+    para([{t:jdate()+"　"+cur.pass+"回目の通し（"+kindOf(cur.kind).name+"）　"+
+      cur.blocks.filter(b=>b.done).length+" / "+cur.blocks.length+"区切り　直し"+fixTotal()+"／朱"+markTotal()+"／付箋"+itemTotal(),sz:18,color:GRAY}])];
+  cur.blocks.forEach((b,i)=>blockParas(i).forEach(x=>ps.push(x)));
   return buildDocx(ps);
 }
-async function autoWord(i){
-  if(conf.autoWord===false) return;
+const wordName=()=>cur.title+"_控え.docx";
+function wordStale(){ return cur.blocks.filter(b=>b.done).length!==(cur.wordDone||0) || !cur.wordAt; }
+/* いつ控えを取るか。each＝区切りごと／leave＝読む画面を離れるとき／manual＝押したときだけ */
+async function wordSnapshot(force){
+  if(!cur) return;
+  if(!force && conf.wordWhen==="manual") return;
+  if(!force && !wordStale()) return;
+  if(!force && !cur.blocks.some(b=>b.done) && !fixTotal() && !markTotal() && !itemTotal()) return;  /* まだ何もしていない */
   try{
-    const name=cur.title+"_"+String(i+1).padStart(3,"0")+"区切り.docx";
-    const how=await writeOut(blockDocx(i),name);
-    toast((i+1)+"区切り目をWordに"+(how==="folder"?"書き込みました":"書き出しました"));
-  }catch(e){ toast("Wordへの書き出しに失敗しました"); }
+    const how=await writeOut(wholeDocx(),wordName());
+    cur.wordAt=Date.now(); cur.wordDone=cur.blocks.filter(b=>b.done).length;
+    saveWork(true);
+    if(!$("v-work").classList.contains("hide")) renderWork();   /* 書き終えてから様子を出す */
+    if(force) toast(how==="folder"? "控えを上書きしました　"+wordName() : "控えを書き出しました　"+wordName());
+    else if(how==="download") toast("控えを書き出しました");
+  }catch(e){ toast("控えの書き出しに失敗しました"); }
 }
 function saveText(t,name){ save(new TextEncoder().encode("﻿"+t),name,"text/plain;charset=utf-8"); }
 function headParas(sub){
@@ -1617,13 +1667,19 @@ function renderPass(){
 /* ============================================================
    画面：設定
    ============================================================ */
+const WHEN=[
+  {id:"leave", name:"読む画面を離れるとき", note:"ひと続きの朱入れが終わるたびに一つ。ふだんはこれで十分です"},
+  {id:"each",  name:"区切りを読み終えるたび", note:"いちばん確実。フォルダを決めていないとダウンロードが増えます"},
+  {id:"manual",name:"押したときだけ", note:"作品の画面の「いま控えを取る」で書き出します"}
+];
 function renderConf(){
-  $("c-auto").classList.toggle("on",conf.autoWord!==false);
+  $("c-when").innerHTML=WHEN.map(w=>'<button class="pick '+(conf.wordWhen===w.id?"on":"")+'" data-w="'+w.id+'"><b>'+esc(w.name)+'</b><span>'+esc(w.note)+'</span></button>').join("");
+  $("c-when").querySelectorAll(".pick").forEach(b=>b.onclick=()=>{ conf.wordWhen=b.dataset.w; saveConf(); renderConf(); });
   $("c-dir").classList.toggle("hide",!canDir());
   $("c-dirstat").textContent = !canDir()
-    ? "この端末ではフォルダを選べません。読み終えるたびに、いつもの場所へダウンロードされます。"
-    : (outDir? "書き出し先："+outDir.name+"　同じ名前で上書きしていきます（アプリを閉じると選び直しになります）"
-             : "フォルダを選ぶと、ダウンロードが溜まらず、同じファイルに上書きしていきます。");
+    ? "この端末ではフォルダを選べません。控えはいつもの場所へダウンロードされ、同じ名前のファイルが増えていきます。"
+    : (outDir? "置き場："+outDir.name+"　同じ一つのファイルに上書きしていきます"
+             : "フォルダを決めると、ダウンロードが増えず、同じ一つのファイルに上書きしていきます。次に開いたときも覚えています。");
   let html="";
   ["hyoki","buntai","seigou"].forEach(c=>{
     html+='<p class="cat-h">'+CATNAME[c]+'</p>';
@@ -1652,7 +1708,7 @@ $("ab-body").innerHTML=
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
  '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。相談の画面で作品の世界を選んでおくと、票の頭に「先に開いてほしいスキル」（文体の正本、その作品の設定の正本、R18の様式）が並ぶので、Claudeは記憶ではなく正本を見て答えます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+
- '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、<em>区切りを読み終えるたびにWordへ</em>を点けたままにしておいてください。一区切りずつWordの控えが残るので、この端末から消えても失われません。パソコンなら、設定で書き出し先のフォルダを決めておくと、ダウンロードが溜まらず同じファイルに上書きされます。</p>';
+ '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、設定の<em>Wordへの控え</em>を切らないでおいてください。作品まるごとが一つのWordに控えられるので、この端末から消えても失われません。パソコンなら控えの置き場（フォルダ）を決めておくと、ダウンロードが増えず、同じ一つのファイルに上書きされます。次に開いたときも覚えています。</p>';
 
 /* ============================================================
    つなぎ込み
@@ -1678,7 +1734,7 @@ $("btn-add").onclick=()=>{ $("a-title").value=""; $("a-body").value="";
   $("a-filestat").textContent="Wordで書き出したファイルをそのまま読み込みます。ふりがなや書式は落ちて、本文だけが入ります。"; view("add"); };
 $("a-back").onclick=()=>view("home");
 $("btn-back").onclick=()=>{ flushWork(); renderHome(); view("home"); };
-$("r-back").onclick=()=>{ saveMemo(); renderWork(); view("work"); };
+$("r-back").onclick=()=>{ saveMemo(); if(conf.wordWhen==="leave") wordSnapshot(); renderWork(); view("work"); };
 $("n-back").onclick=()=>{ renderWork(); view("work"); };
 $("rp-back").onclick=()=>{ renderWork(); view("work"); };
 $("o-back").onclick=()=>{ renderWork(); view("work"); };
@@ -1686,7 +1742,6 @@ $("p-back").onclick=()=>{ renderWork(); view("work"); };
 $("c-back").onclick=()=>{ if(cur){ renderWork(); view("work"); } else { renderHome(); view("home"); } };
 $("ab-back").onclick=()=>{ renderHome(); view("home"); };
 $("btn-conf").onclick=renderConf;
-$("c-auto").onclick=()=>{ conf.autoWord=conf.autoWord===false; saveConf(); renderConf(); };
 $("c-dir").onclick=pickDir;
 $("btn-conf2").onclick=renderConf;
 $("btn-about").onclick=()=>view("about");
@@ -1757,10 +1812,10 @@ $("r-done").onclick=()=>{
   b.done=!was;
   if(!was){ const k=ymd(); daily[k]=(daily[k]||0)+1; jset(K_DAILY,daily); }
   saveWork(true);
-  if(!was) autoWord(finished);
+  if(!was && conf.wordWhen==="each") wordSnapshot();
   if(!was){
     const f=firstUndone();
-    if(f<0){ renderWork(); view("work"); $("w-sheet").classList.add("finished"); toast("ひと通り、朱を入れ終えました"); return; }
+    if(f<0){ if(conf.wordWhen!=="manual") wordSnapshot(); renderWork(); view("work"); $("w-sheet").classList.add("finished"); toast("ひと通り、朱を入れ終えました"); return; }
     openBlock(f);
     const left=quotaLeft(), rest=cur.blocks.filter(x=>!x.done);
     toast(cur.blocks.filter(x=>x.done).length+" / "+cur.blocks.length+"　きょう"+doneToday()+"区切り"+
@@ -1796,6 +1851,7 @@ $("btn-resize").onclick=()=>{
   saveWork(true); renderWork(); toast(cur.blocks.length+"区切りに割り直しました");
 };
 
+$("btn-word").onclick=()=>wordSnapshot(true);
 $("btn-close").onclick=()=>{
   if(cur.closed){
     if(!confirm("校了を取り消して、また朱を入れられるようにしますか。")) return;

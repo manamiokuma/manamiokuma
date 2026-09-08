@@ -58,6 +58,16 @@ await step("鉛筆が引かれている", async () => {
   const msg = await p.locator(".pen-msg").first().textContent();
   must(msg.length > 0, "鉛筆の言葉が空");
 });
+await step("印が一つもないうちは控えを出さない", async () => {
+  let 出た = false;
+  const 見る = () => { 出た = true; };
+  p.on("download", 見る);
+  await p.click("#r-back");
+  await p.waitForTimeout(500);
+  must(!出た, "何も印がないのに控えを書き出した");
+  p.off("download", 見る);
+  await p.click("#btn-go");
+});
 await step("朱を置く／はずす", async () => {
   await p.locator(".ln-s").nth(1).click();
   must(await p.locator(".ln.mk").count() === 1, "朱が付かない");
@@ -154,28 +164,57 @@ await step("覚え書きが残る", async () => {
   await p.fill("#r-memo", "三章の呼称ゆれ");
   await p.locator("#r-memo").blur();
 });
-await step("読み終えると、その区切りがWordに書き出される", async () => {
-  const dl = p.waitForEvent("download");
-  await p.click("#r-done");
-  const d = await dl;
-  must(d.suggestedFilename() === "人形の部屋_001区切り.docx", "名前が違う: " + d.suggestedFilename());
-  await d.saveAs("tools/tmp-page.docx");
+await step("区切りごとにファイルが増えない", async () => {
+  let 数 = 0;
+  const 数える = () => { 数++; };
+  p.on("download", 数える);
+  await p.click("#r-done");                     /* 一区切り読み終える */
+  await p.waitForTimeout(600);
+  must(数 === 0, "区切りごとに書き出している（" + 数 + "回）");
   must(await vis("read"), "次の区切りに進まない");
   must((await p.textContent("#r-count")).startsWith("2 /"), "区切り番号が進まない");
+  p.off("download", 数える);
 });
-await step("設定で止められる", async () => {
+await step("読む画面を離れるときに、まるごと一つを控える", async () => {
+  const dl = p.waitForEvent("download");
   await p.click("#r-back");
+  const d = await dl;
+  must(d.suggestedFilename() === "人形の部屋_控え.docx", "名前が違う: " + d.suggestedFilename());
+  await d.saveAs("tools/tmp-hikae-auto.docx");
+  await p.waitForTimeout(300);
+  const w = await p.textContent("#w-word");
+  must(w.includes("最新です"), "控えの様子が出ない: " + w);
+  must(w.includes("1区切りぶん"), "控えた量が合わない: " + w);
+});
+await step("同じ内容なら二度は出さない", async () => {
+  let 出た = false;
+  const 見る = () => { 出た = true; };
+  p.on("download", 見る);
+  await p.click("#btn-go");
+  await p.click("#r-back");
+  await p.waitForTimeout(600);
+  must(!出た, "朱入れが増えていないのに書き出した");
+  p.off("download", 見る);
+});
+await step("押したときだけにもできる", async () => {
   await p.click("#btn-conf2");
-  await p.click("#c-auto");
-  must(!(await p.locator("#c-auto").evaluate(el => el.className.includes("on"))), "止まらない");
+  await p.locator('#c-when .pick[data-w="manual"]').click();
+  must(await p.locator('#c-when .pick.on[data-w="manual"]').count() === 1, "選べない");
   await p.click("#c-back");
   await p.click("#btn-go");
   let 出た = false;
-  p.once("download", () => { 出た = true; });
+  const 見る = () => { 出た = true; };
+  p.on("download", 見る);
   await p.click("#r-done");
-  await p.waitForTimeout(700);
-  must(!出た, "止めたのに書き出された");
-  await p.click("#btn-conf2"); await p.click("#c-auto"); await p.click("#c-back");   /* 戻す */
+  await p.waitForTimeout(600);
+  must(!出た, "押したときだけのはずが書き出された");
+  p.off("download", 見る);
+  const dl = p.waitForEvent("download");
+  await p.click("#btn-word");                   /* 手で控える */
+  must((await dl).suggestedFilename() === "人形の部屋_控え.docx", "手で控えられない");
+  await p.click("#btn-conf2");
+  await p.locator('#c-when .pick[data-w="leave"]').click();
+  await p.click("#c-back");
 });
 await step("最後まで行くと作品画面に戻る", async () => {
   must(await vis("work"), "作品画面に戻らない");
