@@ -181,6 +181,44 @@ await step("最後まで行くと作品画面に戻る", async () => {
   must(await vis("work"), "作品画面に戻らない");
   must(await p.locator("#w-sheet .cell.done").count() === 2, "マスが埋まらない");
 });
+await step("きょうの分が数えられている", async () => {
+  await p.click("#btn-back");
+  must(await vis("home"), "一覧に戻れない");
+  const q = await p.textContent("#home-quota");
+  must(q.includes("きょうの分"), "きょうの分が出ない: " + q);
+  must((await p.locator("#home-quota i.on").count()) === 2, "読んだぶんの印が付かない");
+});
+await step("つづきからが一押しで開く", async () => {
+  must(await p.locator("#btn-resume").count() === 0, "読み終えた原稿に「つづき」が出ている");
+  await p.locator(".work").first().click();
+  await p.locator("#w-sheet .cell").first().click();   /* 一区切り目の読了印を外して、続きが出る形にする */
+  await p.click("#r-done");
+  await p.click("#btn-back");
+  must(await p.locator("#btn-resume").count() === 1, "つづきが出ない");
+  await p.click("#btn-resume");
+  must(await vis("read"), "一押しで読む画面に入らない");
+  must((await p.textContent("#r-count")).startsWith("1 /"), "続きの区切りに入らない");
+  await p.click("#r-back");
+});
+await step("見通しの日付が出る", async () => {
+  const e = await p.textContent("#w-eta");
+  must(e.includes("読み終わります") || e.includes("見当"), "見通しが出ない: " + e);
+});
+await step("校了の印を押せる", async () => {
+  p.once("dialog", d => d.accept());
+  await p.click("#btn-close");
+  await p.waitForTimeout(300);
+  must(await p.locator(".seal").count() === 1, "朱印が出ない");
+  must((await p.textContent("#w-seal")).includes("校了"), "校了と出ない");
+  must((await p.textContent("#w-log")).includes("回目"), "通した記録が出ない");
+  await p.click("#btn-back");
+  must((await p.textContent("#worklist")).includes("校了"), "一覧に校了が出ない");
+  must(await p.locator("#btn-resume").count() === 0, "校了した原稿につづきが出ている");
+  await p.locator(".work").first().click();
+  p.once("dialog", d => d.accept());
+  await p.click("#btn-close");
+  must(await p.locator(".seal").count() === 0, "校了を取り消せない");
+});
 await step("控えに直しと付箋と覚え書きが並ぶ", async () => {
   await p.click("#btn-notes");
   must(await vis("notes"), "控えが開かない");
@@ -303,6 +341,7 @@ await step("傾向表が出る", async () => {
   const t = await p.textContent("#rp-body");
   must(t.includes("誤字と表記") && t.includes("文体とリズム"), "分類が出ない");
   must(t.includes("いま残っているもの") && t.includes("付箋"), "残りの付箋が出ない");
+  must(!t.includes("前の通しと比べて"), "まだ通し終えていないのに比べが出ている");
   must(t.includes("1回目"), "通しごとの数が出ない");
   await p.click("#rp-back");
 });
@@ -315,6 +354,13 @@ await step("次の通しへ移ると見かたが変わる", async () => {
   must(t.includes("2回目") && t.includes("文体"), "札が変わらない: " + t);
   must(await p.locator("#w-sheet .cell.done").count() === 0, "マスが白紙に戻らない");
   must(await p.locator("#w-sheet .cell.fusen").count() === 1, "通しをまたいで付箋が残っていない");
+});
+await step("通しを終えると、前回と比べられる", async () => {
+  await p.click("#btn-report");
+  const t = await p.textContent("#rp-body");
+  must(t.includes("前の通しと比べて"), "前の通しとの比べが出ない");
+  must(/鉛筆は\d+。いまは\d+/.test(t), "鉛筆の数が並ばない: " + t.slice(t.indexOf("前の通し"), t.indexOf("前の通し") + 90));
+  await p.click("#rp-back");
 });
 await step("通しを変えると鉛筆の種類も変わる", async () => {
   await p.click("#btn-go");

@@ -43,6 +43,33 @@
   .bar{height:3px;background:#dde3e9;margin-top:11px;border-radius:2px;overflow:hidden}
   .bar i{display:block;height:100%;background:var(--shu);transition:width .4s ease}
 
+  /* つづきから */
+  .resume{display:block;width:100%;text-align:left;background:var(--kami);color:var(--ai);border-radius:3px;padding:16px 17px 17px;margin-bottom:14px}
+  .resume b{display:block;font-family:var(--mincho);font-size:19px;font-weight:600;letter-spacing:.04em;margin-bottom:4px}
+  .resume span{font-size:12.5px;color:#a9bccd;font-variant-numeric:tabular-nums;line-height:1.7}
+  .resume:active{background:#0f1e2e}
+  /* きょうの分 */
+  .quota{display:flex;align-items:center;gap:10px;margin:0 0 16px;font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .quota .dots{display:flex;gap:4px}
+  .quota i{width:9px;height:9px;border-radius:5px;border:1px solid var(--ai3);display:block}
+  .quota i.on{background:var(--shu);border-color:var(--shu)}
+  .quota.done{color:var(--shu)}
+  /* 見通し */
+  .eta{margin:0 0 18px;font-size:12.5px;color:var(--dim);line-height:1.8}
+  .eta b{font-family:var(--mincho);font-size:15px;color:var(--kami);font-weight:600}
+  /* 通した記録 */
+  .log{border-top:1px solid var(--ai3);margin-top:20px}
+  .logitem{display:flex;justify-content:space-between;gap:10px;padding:10px 2px;border-bottom:1px solid var(--ai3);font-size:12.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .logitem b{font-family:var(--mincho);font-size:14px;color:var(--kami);font-weight:600}
+  /* 校了の朱印 */
+  .seal{display:inline-flex;align-items:center;justify-content:center;width:64px;height:64px;border:2.5px solid var(--shu);border-radius:50%;color:var(--shu);
+    font-family:var(--mincho);font-size:19px;font-weight:600;letter-spacing:.04em;transform:rotate(-11deg);flex:0 0 auto}
+  .sealwrap{display:flex;align-items:center;gap:14px;margin:0 0 18px}
+  .sealwrap p{margin:0;font-size:12.5px;color:var(--dim);line-height:1.8}
+  .sealwrap b{display:block;font-family:var(--mincho);font-size:16px;color:var(--kami);font-weight:600;margin-bottom:2px}
+  .seal.press{animation:press .5s cubic-bezier(.2,1.4,.4,1)}
+  @keyframes press{0%{transform:rotate(-11deg) scale(2.6);opacity:0}60%{opacity:1}100%{transform:rotate(-11deg) scale(1);opacity:1}}
+  @media (prefers-reduced-motion:reduce){.seal.press{animation:none}}
   .add{width:100%;padding:15px;border:1px dashed var(--ai3);border-radius:3px;color:var(--dim);font-size:13.5px;margin-top:6px}
   .add:hover{color:var(--kami);border-color:var(--dim)}
 
@@ -219,6 +246,8 @@
   <!-- 一覧 -->
   <section id="v-home">
     <div class="brand"><h1>朱入れ</h1><span id="today-line"></span></div>
+    <div id="home-quota"></div>
+    <div id="home-resume"></div>
     <div id="worklist" class="worklist"><p class="load">読み込んでいます</p></div>
     <button class="add" id="btn-add">＋ 原稿を入れる</button>
     <div class="stat" id="home-stat"></div>
@@ -231,9 +260,11 @@
   <!-- 作品 -->
   <section id="v-work" class="hide">
     <div class="brand"><h1 id="w-title" class="sub-h"></h1><button id="btn-back">一覧</button></div>
+    <div id="w-seal"></div>
     <div class="pass" id="w-pass"></div>
     <p class="rest" id="w-rest"></p>
     <p class="sub" id="w-sub"></p>
+    <p class="eta" id="w-eta"></p>
     <div class="sheet" id="w-sheet"></div>
     <button class="go" id="btn-go"></button>
     <div class="row">
@@ -246,6 +277,8 @@
     </div>
     <button class="go quiet" id="btn-talk" style="margin-top:9px">付箋をClaudeに相談する</button>
     <div class="stat" id="w-stat"></div>
+    <div class="log" id="w-log"></div>
+    <button class="go quiet" id="btn-close" style="margin-top:16px"></button>
     <div class="foot"><button id="btn-del" style="color:#8d9bab">この原稿を消す</button><button id="btn-resize">区切りを割り直す</button><button id="btn-conf2">設定</button></div>
   </section>
 
@@ -351,6 +384,9 @@
     <button class="sw" id="c-auto"><i></i><div><b>区切りを読み終えるたびにWordへ</b><span>その区切りの本文（直し反映・朱は赤・付箋は山吹）と控えを、一区切りずつ書き出します。端末のデータが消えても、Wordの側に残ります</span></div></button>
     <button class="go quiet" id="c-dir" style="margin-top:11px">書き出し先のフォルダを選ぶ</button>
     <p class="hint" id="c-dirstat" style="margin:7px 0 4px"></p>
+    <p class="cat-h">きょうの分</p>
+    <div class="field" style="margin-top:8px"><label for="c-quota">一日にこれだけ読めたら上出来、という区切り数</label><input id="c-quota" type="number" inputmode="numeric"></div>
+    <p class="hint" style="margin:0 0 4px">少なめに決めておくのがこつです。三区切りでおよそ三十分。</p>
     <p class="cat-h">下読み</p>
     <p class="lead">機械が先に読んで、あやしい行に<u>鉛筆</u>を引きます。朱は人が入れるもの、鉛筆は機械が引くもの。うるさい項目は消してください。消しても本文は変わりません。</p>
     <div id="c-list"></div>
@@ -639,16 +675,50 @@ function renderHome(){
       const k=kindOf(w.kind);
       return '<button class="work '+(p>0&&p<100?"on":"")+'" data-id="'+w.id+'">'+
         '<h2>'+esc(w.title)+'</h2>'+
-        '<p>'+w.done+' / '+w.total+' 区切り　'+w.pass+'回目・'+esc(k.name)+(p===100?"　この通しは終わり":"")+'</p>'+
+        '<p>'+w.done+' / '+w.total+' 区切り　'+w.pass+'回目・'+esc(k.name)+(w.closed?"　校了":(p===100?"　この通しは終わり":""))+'</p>'+
         '<div class="bar"><i style="width:'+p+'%"></i></div></button>';
     }).join("");
     list.querySelectorAll(".work").forEach(b=>b.onclick=()=>openWork(b.dataset.id));
   }
-  const t=daily[ymd()]||0;
-  $("today-line").textContent = t? "きょう "+t+"区切り" : "";
+  renderQuota(); renderResume();
+  const t=doneToday(), st=streak();
+  $("today-line").textContent = st>1? st+"日つづき" : "";
   const days=Object.keys(daily), total=Object.values(daily).reduce((a,b)=>a+b,0);
   $("home-stat").innerHTML = days.length?
     '<div><b>'+streak()+'</b><span>続いた日数</span></div><div><b>'+t+'</b><span>きょう</span></div><div><b>'+total+'</b><span>これまで</span></div>' : "";
+}
+/* 直近二週間の実績から、一日あたりの区切り数 */
+function pace(){
+  let n=0; const d=new Date();
+  for(let i=0;i<14;i++){ n+=daily[ymd(d)]||0; d.setDate(d.getDate()-1); }
+  return n/14;
+}
+/* この調子だと、いつ読み終わるか */
+function eta(rest){
+  const p=pace();
+  if(!rest||p<=0) return null;
+  const days=Math.ceil(rest/p);
+  if(days>400) return null;
+  const d=new Date(); d.setDate(d.getDate()+days);
+  return {days:days, when:(d.getMonth()+1)+"月"+d.getDate()+"日"};
+}
+const quota=()=>Math.max(1,conf.quota||3);
+const doneToday=()=>daily[ymd()]||0;
+const quotaLeft=()=>Math.max(0,quota()-doneToday());
+function renderQuota(){
+  const q=quota(), t=doneToday(), left=quotaLeft();
+  $("home-quota").innerHTML='<div class="quota '+(left?"":"done")+'"><span class="dots">'+
+    Array.from({length:Math.min(q,12)},(x,i)=>'<i class="'+(i<t?"on":"")+'"></i>').join("")+'</span>'+
+    (left? "きょうの分　あと"+left+"区切り（およそ"+mins(left*2200)+"）" : "きょうの分は済みました　"+t+"区切り")+'</div>';
+}
+/* つづきから。いちばん最後にひらいた原稿を、一押しで開けるようにする */
+function renderResume(){
+  const box=$("home-resume"); box.innerHTML="";
+  const w=index.find(x=>x.id===conf.last);
+  if(!w||w.closed||w.done>=w.total) return;
+  box.innerHTML='<button class="resume" id="btn-resume"><b>つづきを読む</b>'+
+    '<span>'+esc(w.title)+'　'+(w.done+1)+'区切り目　のこり'+(w.total-w.done)+'</span></button>';
+  $("btn-resume").onclick=()=>{ openWork(conf.last,true); };
 }
 function streak(){
   let n=0, d=new Date();
@@ -659,12 +729,14 @@ function streak(){
 /* ============================================================
    画面：作品
    ============================================================ */
-function openWork(id){
+function openWork(id,go){
   curId=id; cur=jget("shuire:work:"+id);
   if(!cur){ toast("本文が見つかりません"); return; }
   migrate(cur);
   yure=buildYure(cur);
   penCache=readWork(cur, kindOf(cur.kind).cats);
+  if(conf.last!==id){ conf.last=id; jset(K_CONF,conf); }
+  if(go){ const f=firstUndone(); openBlock(f<0?0:f); return; }
   renderWork(); view("work");
 }
 function migrate(w){
@@ -680,6 +752,19 @@ function migrate(w){
   if(w.world===undefined){ w.world="none"; w.r18=true; w.moreSkills=""; }   /* R18は既定で入っている前提 */
 }
 function firstUndone(){ for(let i=0;i<cur.blocks.length;i++) if(!cur.blocks[i].done) return i; return -1; }
+let sealNew=false;
+function renderLog(){
+  const h=(cur.history||[]);
+  $("w-log").innerHTML = h.length? '<div class="logitem" style="border:none;padding-bottom:4px"><span>通した記録</span><span></span></div>'+
+    h.map(x=>'<div class="logitem"><b>'+x.n+'回目　'+esc(kindOf(x.kind).name)+'</b><span>'+
+      (x.finished?jstamp(x.finished):"")+'　直し'+(x.fixes||0)+'</span></div>').join("") : "";
+}
+function jstamp(t){ const d=new Date(t); return (d.getMonth()+1)+"/"+d.getDate(); }
+function allPens(){ return readWork(cur,null).reduce((a,m)=>a+penCount(m),0); }
+function passRecord(){
+  return {n:cur.pass,kind:cur.kind,finished:Date.now(),marks:markTotal(),
+          fixes:cur.log.filter(l=>l.p===cur.pass).length,pens:allPens()};
+}
 function markTotal(){ return cur.blocks.reduce((a,b)=>a+b.marks.length,0); }
 function fusenTotal(){ return itemTotal(); }
 function fixTotal(){ return cur.blocks.reduce((a,b)=>a+Object.keys(b.edits).length,0); }
@@ -691,9 +776,9 @@ function renderWork(){
   $("w-pass").innerHTML='<b>'+cur.pass+'回目の通し　'+esc(k.name)+'</b><span>'+esc(k.look)+'</span>';
   const rest=cur.blocks.filter(b=>!b.done);
   const chars=rest.reduce((a,b)=>a+b.t.length,0);
-  $("w-rest").innerHTML= rest.length? '残り <b>'+rest.length+'</b> 区切り' : "この通しは読み終わりました";
+  $("w-rest").innerHTML= cur.closed? "校了しました" : (rest.length? '残り <b>'+rest.length+'</b> 区切り' : "この通しは読み終わりました");
   const pen=penTotal();
-  $("w-sub").textContent= (rest.length? "およそ"+mins(chars)+"　" : "")+"全"+cur.blocks.length+"区切り・"+workText(cur).length.toLocaleString()+"字"+(pen?"　鉛筆"+pen+"行":"　鉛筆なし");
+  $("w-sub").textContent= (rest.length&&!cur.closed? "およそ"+mins(chars)+"　" : "")+"全"+cur.blocks.length+"区切り・"+workText(cur).length.toLocaleString()+"字"+(pen?"　鉛筆"+pen+"行":"　鉛筆なし");
   $("w-sheet").className="sheet";
   $("w-sheet").innerHTML=cur.blocks.map((b,i)=>{
     const p=penCount(penCache[i]||{});
@@ -701,8 +786,16 @@ function renderWork(){
       (p&&!b.done?'<span class="pen">'+(p>9?"＋":p)+'</span>':'')+'</button>';
   }).join("");
   $("w-sheet").querySelectorAll(".cell").forEach(c=>c.onclick=()=>openBlock(+c.dataset.i));
+  const e=eta(rest.length);
+  $("w-eta").innerHTML = cur.closed? "" : (e? "この調子だと <b>"+e.when+"</b> ごろ（あと"+e.days+"日）に、この通しを読み終わります。"
+    : (rest.length? "きょうから読みはじめると、日数の見当がつくようになります。" : ""));
+  $("w-seal").innerHTML = cur.closed? '<div class="sealwrap"><div class="seal'+(sealNew?" press":"")+'">校了</div><p><b>校了</b>'+
+    esc(cur.title)+'　'+(cur.closedAt||"")+'　'+cur.pass+'回通しました</p></div>' : "";
+  sealNew=false;
+  $("btn-close").textContent = cur.closed? "校了を取り消す" : "校了にする";
+  renderLog();
   const f=firstUndone();
-  $("btn-go").textContent = f<0? "はじめから読み直す" : (cur.blocks.some(b=>b.done)? "つづきを読む（"+(f+1)+"区切り目）" : "読みはじめる");
+  $("btn-go").textContent = cur.closed? "もう一度読む" : (f<0? "はじめから読み直す" : (cur.blocks.some(b=>b.done)? "つづきを読む（"+(f+1)+"区切り目）" : "読みはじめる"));
   const notes=cur.blocks.filter(b=>b.note.trim()).length;
   $("btn-notes").textContent = "控え "+(markTotal()+fusenTotal()+fixTotal()+notes)+"件";
   $("w-stat").innerHTML='<div><b>'+cur.blocks.filter(b=>b.done).length+'</b><span>読み終えた</span></div>'+
@@ -927,11 +1020,12 @@ document.addEventListener("keydown",e=>{ if(e.key==="Escape"&&!$("veil").classLi
 /* ============================================================
    起動
    ============================================================ */
-function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, cpm:200, autoWord:true}; }
+function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rules:r, cpm:200, autoWord:true, quota:3, last:null}; }
 (function boot(){
   conf=jget(K_CONF)||defaultConf();
   conf.rules=conf.rules||{}; RULES.forEach(x=>{ if(conf.rules[x.id]===undefined) conf.rules[x.id]=true; });
   if(conf.autoWord===undefined) conf.autoWord=true;
+  if(!conf.quota) conf.quota=3;
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
@@ -1390,6 +1484,16 @@ function renderReport(){
     '<tr><td>付箋（どう直すか決まっていないところ）</td><td class="n">'+itemTotal()+'</td></tr>'+
     '<tr><td>朱（直すと決めた行）</td><td class="n">'+markTotal()+'</td></tr></tbody></table>';
   const passes=Object.keys(byPass).sort((a,b)=>a-b);
+  const past=(cur.history||[]).filter(x=>typeof x.pens==="number");
+  if(past.length){
+    const last=past[past.length-1], diff=last.pens-total;
+    html+='<p class="cat-h">前の通しと比べて</p><p class="lead">'+
+      last.n+'回目（'+esc(kindOf(last.kind).name+'）を終えたとき鉛筆は'+last.pens+'。いまは'+total+'。')+
+      (diff>0? '<b style="color:var(--shu)">'+diff+'減りました。</b>直した手が身についてきています。'
+             : (diff<0? String(-diff)+'増えています。読みが細かくなったのかもしれません。' : '同じです。'))+'</p>';
+    html+='<table class="tally"><tbody>'+past.map(x=>'<tr><td>'+x.n+'回目　'+esc(kindOf(x.kind).name)+'</td><td class="n">'+x.pens+'</td></tr>').join("")+
+      '<tr><td>いま</td><td class="n">'+total+'</td></tr></tbody></table>';
+  }
   html+='<p class="cat-h">通しごとに直した数</p>';
   if(passes.length){
     html+='<table class="tally"><tbody>'+passes.map(p=>'<tr><td>'+p+'回目　'+esc(kindOf(byPass[p].kind).name)+'</td><td class="n">'+byPass[p].n+'</td></tr>').join("")+'</tbody></table>';
@@ -1435,6 +1539,8 @@ function renderConf(){
     const id=b.dataset.id; conf.rules[id]=conf.rules[id]===false; b.classList.toggle("on",conf.rules[id]!==false); saveConf();
   });
   $("c-cpm").onchange=()=>{ conf.cpm=Math.max(50,Math.min(2000,+$("c-cpm").value||200)); saveConf(); };
+  $("c-quota").value=quota();
+  $("c-quota").onchange=()=>{ conf.quota=Math.max(1,Math.min(50,+$("c-quota").value||3)); saveConf(); renderQuota(); };
   view("conf");
 }
 function saveConf(){ jset(K_CONF,conf); if(cur){ penCache=readWork(cur,kindOf(cur.kind).cats); } }
@@ -1501,6 +1607,7 @@ $("a-save").onclick=()=>{
        world:"none",r18:true,moreSkills:""};
   curId=id;
   index.unshift({id:id,title:title,done:0,total:blocks.length,pass:1,kind:"typo"});
+  conf.last=id; jset(K_CONF,conf);
   jset(K_INDEX,index);
   if(jset("shuire:work:"+id,cur)){
     yure=buildYure(cur); penCache=readWork(cur,kindOf(cur.kind).cats);
@@ -1557,7 +1664,9 @@ $("r-done").onclick=()=>{
     const f=firstUndone();
     if(f<0){ renderWork(); view("work"); $("w-sheet").classList.add("finished"); toast("ひと通り、朱を入れ終えました"); return; }
     openBlock(f);
-    toast(cur.blocks.filter(x=>x.done).length+" / "+cur.blocks.length);
+    const left=quotaLeft(), rest=cur.blocks.filter(x=>!x.done);
+    toast(cur.blocks.filter(x=>x.done).length+" / "+cur.blocks.length+"　きょう"+doneToday()+"区切り"+
+      (left? "　あと"+left+"で今日の分" : "　きょうの分は済みました")+"　のこりおよそ"+mins(rest.reduce((a,b)=>a+b.t.length,0)));
   }else{ renderWork(); view("work"); }
 };
 $("r-skip").onclick=()=>{
@@ -1569,8 +1678,7 @@ $("r-memo").addEventListener("blur",saveMemo);
 
 $("btn-newpass").onclick=renderPass;
 $("p-start").onclick=()=>{
-  cur.history.push({n:cur.pass,kind:cur.kind,finished:Date.now(),
-    marks:markTotal(),fixes:cur.log.filter(l=>l.p===cur.pass).length});
+  cur.history.push(passRecord());
   cur.blocks.forEach(b=>{ b.done=false; });
   cur.pass++; cur.kind=pickKind;
   penCache=readWork(cur,kindOf(cur.kind).cats);
@@ -1590,6 +1698,23 @@ $("btn-resize").onclick=()=>{
   saveWork(true); renderWork(); toast(cur.blocks.length+"区切りに割り直しました");
 };
 
+$("btn-close").onclick=()=>{
+  if(cur.closed){
+    if(!confirm("校了を取り消して、また朱を入れられるようにしますか。")) return;
+    cur.closed=false; delete cur.closedAt;
+    const h=cur.history, last=h[h.length-1];
+    if(last&&last.by==="close"&&last.n===cur.pass) h.pop();
+  }else{
+    const rest=cur.blocks.filter(b=>!b.done).length;
+    if(rest && !confirm("まだ"+rest+"区切り残っています。それでも校了にしますか。")) return;
+    cur.history.push(Object.assign(passRecord(),{by:"close"}));
+    cur.closed=true; cur.closedAt=jdate(); sealNew=true;
+  }
+  const w=index.find(x=>x.id===curId); if(w) w.closed=cur.closed;
+  saveWork(true); jset(K_INDEX,index);
+  renderWork(); window.scrollTo(0,0);
+  if(cur.closed){ $("w-sheet").classList.add("finished"); toast("校了。"+cur.pass+"回通しました"); }
+};
 $("btn-del").onclick=()=>{
   if(!confirm("「"+cur.title+"」を本文ごと消しますか。元に戻せません。")) return;
   jdel("shuire:work:"+curId);
