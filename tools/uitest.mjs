@@ -62,6 +62,39 @@ await step("通しの札が出る", async () => {
   const t = await p.textContent("#w-pass");
   must(t.includes("1回目") && t.includes("誤字と表記"), "札の中身: " + t);
 });
+await step("既定は段落ずつ。文を押すと札が出て、朱と付箋が置ける", async () => {
+  await p.click("#btn-go");
+  must(await vis("read"), "読む画面に来ない");
+  must((await p.textContent("#r-flow")) === "段落ずつ", "札の文言: " + (await p.textContent("#r-flow")));
+  must((await p.locator(".para").count()) >= 2, "段落が分かれていない");
+  must((await p.locator(".sen").count()) > 3, "文が並んでいない");
+  must((await p.locator(".ln").count()) === 0, "段落ずつなのに一文ずつの行がある");
+  const sen = p.locator('.sen[data-k="3"]');
+  await sen.click();
+  must(await p.locator(".pick-bar").isVisible(), "押した文に札が出ない");
+  await p.click('[data-ps="3"]');
+  must(await p.locator('.sen[data-k="3"].mk').count() === 1, "朱が付かない");
+  must((await p.textContent("#r-len")).includes("朱1"), "数が増えない");
+  await p.click('[data-ps="3"]');
+  must(await p.locator('.sen[data-k="3"].mk').count() === 0, "朱が外れない");
+  await p.click('[data-pf="3"]');
+  must(await p.locator('.sen[data-k="3"].fs').count() === 1, "付箋が付かない");
+  must(await p.locator('.tags[data-m="3"]').isVisible(), "付箋の札が出ない");
+  await p.click('[data-pf="3"]');
+  must(await p.locator('.tags[data-m="3"]').count() === 0, "付箋の札が消えない");
+  await p.locator('.sen[data-k="3"]').click();   /* 押している文をもう一度押すと直す窓 */
+  must(await p.locator("#sh-t").isVisible(), "直す窓が開かない");
+  await p.keyboard.press("Escape");
+});
+await step("一文ずつに切り替えられ、覚えている", async () => {
+  await p.click("#r-flow");
+  must((await p.textContent("#r-flow")) === "一文ずつ", "切り替わらない");
+  must((await p.locator(".ln").count()) > 3, "一文ずつの行が並ばない");
+  await p.click("#r-back");
+  await p.click("#btn-go");
+  must((await p.locator(".ln").count()) > 3, "覚えていない");
+  await p.click("#r-back");
+});
 await step("読む画面に入る", async () => {
   await p.click("#btn-go");
   must(await vis("read"), "読む画面に来ない");

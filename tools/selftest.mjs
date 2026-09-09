@@ -131,6 +131,18 @@ await run("直しても他の行の番号がずれない", () => {
   eq(ev("workText(__w4)"), "壱。改行も\n入る。二。三。");
 });
 
+console.log("\n段落ずつの本文");
+await run("段落は改行で分かれ、空行は空きになる。文の番号は一文ずつと同じ", () => {
+  ev(`__pb = {t: "　朝が来た。光が来た。\\n　鳥が鳴いた。\\n\\n　夜が来た。", marks:[1], fusen:[], edits:{}, advice:{}, fmemo:{}, ftags:{}, wide:{on:false,memo:"",tags:[]}, note:"", done:false}; cur={blocks:[__pb], log:[]}; pos=0;`);
+  const html = ev("renderPara(__pb, lines(__pb.t), {})");
+  eq((html.match(/<p class="pt">/g) || []).length, 3, "段落の数");
+  eq((html.match(/class="lngap"/g) || []).length, 1, "空行の数");
+  eq((html.match(/class="sen[^"]*" data-k="(\d+)"/g) || []).length, 4, "文の数");
+  truthy(html.includes('class="sen mk" data-k="1"'), "朱の文に印がない");
+  const ls = ev("lines(__pb.t)");
+  eq(ls[1], "光が来た。", "文の番号が一文ずつとずれている");
+});
+
 console.log("\n下読み（鉛筆）");
 await run("機械の下読みは、既定では止まっている", () => {
   eq(ev("conf.pen"), false, "既定で点いている");

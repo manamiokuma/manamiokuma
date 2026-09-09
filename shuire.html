@@ -188,6 +188,22 @@
   .lnhold{margin-bottom:1px}
   .lnhold.pen .ln-t{background:linear-gradient(transparent 82%, rgba(123,143,163,.35) 82%)}
   .lngap{height:22px}
+  /* 段落ずつ：一段落を一つの <p> にし、文は span。押した文に札が出る */
+  .para{margin-bottom:6px}
+  .pt{font-family:var(--mincho);font-size:17px;line-height:2.05;letter-spacing:.02em;color:var(--kami);margin:0;padding:5px 4px 5px 12px;white-space:pre-wrap;word-break:break-word;border-left:2px solid transparent}
+  .sen{cursor:pointer;border-radius:2px;padding:3px 0;transition:background .15s}
+  .sen:hover{background:var(--ai2)}
+  .sen.pen{background:linear-gradient(transparent 82%, rgba(123,143,163,.35) 82%)}
+  .sen.mk{background:rgba(198,48,27,.12);box-shadow:inset 0 -2px var(--shu)}
+  .sen.fs{background:rgba(176,125,18,.14);box-shadow:inset 0 -2px var(--fusen)}
+  .sen.mk.fs{box-shadow:inset 0 -2px var(--shu),0 2px var(--fusen)}
+  .sen.fx{color:var(--sumi)}
+  .sen.pick{outline:2px solid var(--dim);outline-offset:1px;background:var(--ai2)}
+  .pick-bar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:4px 4px 8px 12px}
+  .pick-bar .pk-q{flex:1 1 100%;font-size:11.5px;color:var(--dim);line-height:1.6}
+  .pick-bar button{font-size:12.5px;font-family:var(--mincho);border:1px solid var(--ai3);border-radius:4px;background:#fff;color:var(--kami);padding:7px 12px}
+  .pick-bar button.on-s{background:var(--shu);border-color:var(--shu);color:#fff}
+  .pick-bar button.on-f{background:var(--fusen);border-color:var(--fusen);color:#fff}
   .marknum{font-size:12.5px;color:var(--shu);padding:2px 0 0}
 
   .memo{margin:14px 0 0;background:var(--ai2);border-radius:3px;padding:13px 14px}
@@ -321,7 +337,7 @@
       <b id="r-count"></b>
       <span id="r-len"></span>
     </div>
-    <div class="look"><em id="r-look"></em><button id="r-nextpen">鉛筆へ</button></div>
+    <div class="look"><em id="r-look"></em><button id="r-flow" title="読む単位を切り替える">段落ずつ</button><button id="r-nextpen">鉛筆へ</button></div>
     <div style="padding:0 18px" class="r-body">
       <div class="text" id="r-text"></div>
       <div id="r-wide-box"></div>
@@ -506,7 +522,7 @@ function mins(n){ const m=Math.max(1,Math.round(n/(conf.cpm||200))); return m<60
 const VIEWS=["home","work","read","notes","report","out","add","pass","conf","about","talk"];
 function view(v,keep){ VIEWS.forEach(n=>$("v-"+n).classList.toggle("hide",n!==v)); if(!keep) window.scrollTo(0,0); }
 /* 手を入れた行を、画面の同じ高さに留めておくための錨 */
-function anchorSel(key){ return key==="wide"?"#r-wide-box":'#r-text .lnhold[data-k="'+key+'"]'; }
+function anchorSel(key){ return key==="wide"?"#r-wide-box":'#r-text .lnhold[data-k="'+key+'"], #r-text .sen[data-k="'+key+'"]'; }
 function anchorGet(key){
   if(key===undefined||key===null) return null;
   const el=document.querySelector(anchorSel(key));
@@ -1004,8 +1020,38 @@ function flushWork(){
 /* ============================================================
    画面：読む
    ============================================================ */
+const isPara=()=>conf.flow!=="line";       /* 読む単位。既定は段落ずつ */
+let pickK=null;                             /* 段落ずつのとき、いま押している文 */
+const headOf=t=>{ const x=String(t).replace(/^[\s　]+/,""); return x.length>14? x.slice(0,14)+"…" : x; };
+function pickBar(k,mk,fs,t){
+  return '<div class="pick-bar" data-pk="'+k+'"><span class="pk-q">「'+esc(headOf(t))+'」</span>'+
+    '<button class="'+(mk?"on-s":"")+'" data-ps="'+k+'">'+(mk?"朱を外す":"朱を置く")+'</button>'+
+    '<button class="'+(fs?"on-f":"")+'" data-pf="'+k+'">'+(fs?"付箋を外す":"付箋を貼る")+'</button>'+
+    '<button data-px="'+k+'">直す</button></div>';
+}
+/* 段落ずつの本文。段落＝改行で区切られたひとつづき。文は span で、番号は一文ずつのときと同じ k */
+function renderPara(b,ls,pens){
+  const out=[]; let p=[];
+  const flush=()=>{
+    if(!p.length) return;
+    const extra=[];
+    const spans=p.map(k=>{
+      const t=lineText(b,ls,k), mk=b.marks.indexOf(k)>=0, fs=b.fusen.indexOf(k)>=0, fx=disp(b,k)!==null, pe=pens[k];
+      if(pickK===k) extra.push(pickBar(k,mk,fs,t));
+      if(fs&&b.fusen.indexOf(k+1)<0) extra.push(memoRow(k));
+      if(b.advice[k]) extra.push('<button class="adv-msg" data-a="'+k+'">「'+esc(headOf(t))+'」　Claudeの案 '+(advCands(b.advice[k]).length||1)+'件　押して開く</button>');
+      if(pe) extra.push('<div class="pen-msg">「'+esc(headOf(t))+'」　'+pe.map(x=>'<u>'+esc(x.msg)+'</u>').join("　")+'</div>');
+      return '<span class="sen'+(mk?" mk":"")+(fs?" fs":"")+(fx?" fx":"")+(pe?" pen":"")+(pickK===k?" pick":"")+'" data-k="'+k+'">'+esc(t)+'</span>';
+    });
+    out.push('<div class="para"><p class="pt">'+spans.join("")+'</p>'+extra.join("")+'</div>'); p=[];
+  };
+  ls.forEach((s,k)=>{ if(s===null){ if(p.length) flush(); else out.push('<div class="lngap"></div>'); } else p.push(k); });
+  flush();
+  return out.join("");
+}
 function openBlock(i,keep){
   const a=(pos===i)?anchorGet(keep):null;   /* 同じ区切りを描き直すときだけ留める */
+  if(pos!==i) pickK=null;
   pos=i;
   const b=cur.blocks[i], ls=lines(b.t);
   $("r-count").textContent=(i+1)+" / "+cur.blocks.length;
@@ -1014,7 +1060,8 @@ function openBlock(i,keep){
   const pn=penCount(pens);
   $("r-nextpen").classList.toggle("hide",!pn);
   $("r-nextpen").textContent="鉛筆 "+pn+"行";
-  $("r-text").innerHTML=ls.map((s,k)=>{
+  $("r-flow").textContent=isPara()?"段落ずつ":"一文ずつ";
+  $("r-text").innerHTML=isPara()? renderPara(b,ls,pens) : ls.map((s,k)=>{
     if(s===null) return '<div class="lngap"></div>';
     const t=lineText(b,ls,k), mk=b.marks.indexOf(k)>=0, fs=b.fusen.indexOf(k)>=0, fx=disp(b,k)!==null, pe=pens[k];
     return '<div class="lnhold'+(pe?" pen":"")+'" data-k="'+k+'">'+
@@ -1030,6 +1077,10 @@ function openBlock(i,keep){
   $("r-text").querySelectorAll(".ln-s").forEach(el=>el.onclick=()=>toggleMark(+el.dataset.s));
   $("r-text").querySelectorAll(".ln-f").forEach(el=>el.onclick=()=>toggleFusen(+el.dataset.f));
   $("r-text").querySelectorAll(".adv-msg").forEach(el=>el.onclick=()=>openSheet(+el.dataset.a));
+  $("r-text").querySelectorAll(".sen").forEach(el=>el.onclick=()=>{ const k=+el.dataset.k; if(pickK===k){ openSheet(k); return; } pickK=k; openBlock(pos,k); });
+  $("r-text").querySelectorAll("[data-ps]").forEach(el=>el.onclick=()=>toggleMark(+el.dataset.ps));
+  $("r-text").querySelectorAll("[data-pf]").forEach(el=>el.onclick=()=>toggleFusen(+el.dataset.pf));
+  $("r-text").querySelectorAll("[data-px]").forEach(el=>el.onclick=()=>openSheet(+el.dataset.px));
   wireMemoRows($("r-text"));
   renderWideBox();
   showLen();
@@ -1122,6 +1173,7 @@ function refreshBlockPen(){
 function toggleMark(k){
   const b=cur.blocks[pos], j=b.marks.indexOf(k);
   if(j>=0) b.marks.splice(j,1); else { b.marks.push(k); b.marks.sort((x,y)=>x-y); }
+  if(isPara()){ saveWork(); openBlock(pos,k); return; }
   const hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
   if(hold) hold.querySelector(".ln").classList.toggle("mk",j<0);
   showLen(); saveWork();
@@ -1131,6 +1183,7 @@ function toggleFusen(k){
   const b=cur.blocks[pos], j=b.fusen.indexOf(k);
   if(j>=0){ b.fusen.splice(j,1); delete b.fmemo[k]; delete b.ftags[k]; }
   else { b.fusen.push(k); b.fusen.sort((x,y)=>x-y); }
+  if(isPara()){ saveWork(); openBlock(pos,k); if(j<0) toast("付箋を貼りました　ひとこと足せます（なくても構いません）"); return; }
   const hold=$("r-text").querySelector('.lnhold[data-k="'+k+'"]');
   if(hold) hold.querySelector(".ln").classList.toggle("fs",j<0);
   syncMemoRow(k-1); syncMemoRow(k);   /* 続きの範囲では、札は範囲の終わりに一度だけ */
@@ -2680,8 +2733,9 @@ $("o-harvest").onclick=()=>saveText(harvestText(),cur.title+"_直しの回収_"+
 $("o-carry").onclick=()=>saveText(carryText(),cur.title+"_執筆に持っていく_"+stamp()+".txt");
 $("o-pair").onclick=()=>{ saveText(origText(cur),cur.title+"_もと.txt"); setTimeout(()=>saveText(workText(cur),cur.title+"_直し.txt"),400); };
 
+$("r-flow").onclick=()=>{ conf.flow=isPara()?"line":"para"; saveConf(); pickK=null; openBlock(pos,pickK===null?undefined:pickK); toast(isPara()? "段落ずつ読みます　文を押すと朱や付箋の札が出ます" : "一文ずつ読みます"); };
 $("r-nextpen").onclick=()=>{
-  const holds=[...$("r-text").querySelectorAll(".lnhold.pen")];
+  const holds=[...$("r-text").querySelectorAll(".lnhold.pen, .sen.pen")];
   if(!holds.length){ toast("この区切りに鉛筆はありません"); return; }
   const top=window.scrollY+90;
   const next=holds.find(h=>h.getBoundingClientRect().top+window.scrollY>top+40)||holds[0];
