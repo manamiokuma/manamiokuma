@@ -1,0 +1,15 @@
+{
+  "name": "朱入れ",
+  "short_name": "朱入れ",
+  "description": "自分の直しから型を拾って先回りする、推敲の一枚",
+  "lang": "ja",
+  "start_url": "./shuire.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f8f9",
+  "theme_color": "#f7f8f9",
+  "icons": [
+    { "src": "shuire-icon.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "shuire-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

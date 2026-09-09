@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="朱入れ">
+<meta name="theme-color" content="#f7f8f9">
+<link rel="manifest" href="shuire.webmanifest">
+<link rel="apple-touch-icon" href="shuire-icon.png">
 <title>朱入れ</title>
 <style>
   :root, .wrap{
@@ -91,6 +98,8 @@
   .add:hover{color:var(--kami);border-color:var(--dim)}
 
   .empty{padding:34px 4px;color:var(--dim);font-size:13.5px;line-height:2}
+  .warn{border:1px solid var(--fusen);border-left:4px solid var(--fusen);padding:12px 14px;margin:0 0 16px;font-size:12.5px;line-height:1.8;color:var(--kami);border-radius:2px}
+  .warn button{display:inline-block;margin-top:8px;padding:8px 14px;border:1px solid var(--kami);border-radius:2px;font-size:12.5px}
   .empty b{display:block;font-family:var(--mincho);font-size:17px;color:var(--kami);font-weight:600;margin-bottom:8px}
 
   /* 面付けグリッド */
@@ -265,6 +274,7 @@
   <!-- 一覧 -->
   <section id="v-home">
     <div class="brand"><h1>朱入れ</h1><span id="today-line"></span></div>
+    <div class="warn hide" id="home-warn"></div>
     <div id="home-quota"></div>
     <div id="home-resume"></div>
     <div id="worklist" class="worklist"><p class="load">読み込んでいます</p></div>
@@ -468,8 +478,12 @@
 
 const K_INDEX="shuire:index", K_DAILY="shuire:daily", K_CONF="shuire:conf", K_MEMORY="shuire:memory";
 let memory=[];                                   /* 過去の直しの持ち越し [{o,n,w,at}] */
+let syncDb=null, syncOn=false, syncMute=false, syncUnsubs=[], pushed={}, pushedAt={}, pushedNb={}, pushedRev={}, syncAt=0, syncState="off", syncT=null, syncQueue={};   /* 揃える係の状態（起動時の描画からも読むので、ここで宣言） */
 const $=id=>document.getElementById(id);
 const mem={};
+/* このブラウザがこのページに保存を許しているか。枠の中のページや「サイトデータをブロック」の設定では許されないことがある */
+let storeOk=true;
+try{ localStorage.setItem("shuire:probe","1"); localStorage.removeItem("shuire:probe"); }catch(e){ storeOk=false; }
 
 /* ---------- 保存（localStorage、だめならこの回だけ記憶） ---------- */
 function jget(k){ if(k in mem) return mem[k];
@@ -477,7 +491,7 @@ function jget(k){ if(k in mem) return mem[k];
   catch(e){ return null; } }
 function jset(k,v){ mem[k]=v; syncSchedule(k);
   try{ localStorage.setItem(k,JSON.stringify(v)); return true; }
-  catch(e){ toast("この端末に保存できませんでした。開いている間だけ残ります"); return false; } }
+  catch(e){ if(storeOk){ storeOk=false; toast("この端末に保存できませんでした。開いている間だけ残ります"); renderWarn(); } return false; } }
 function jdel(k){ delete mem[k]; try{ localStorage.removeItem(k); }catch(e){} }
 
 let index=[], daily={}, conf=null, cur=null, curId=null, pos=0, yure=null, penCache=null, sheetK=-1;
@@ -722,7 +736,17 @@ function penCount(map){ let n=0; for(const k in map) n++; return n; }
 /* ============================================================
    画面：一覧
    ============================================================ */
+function renderWarn(){
+  const el=$("home-warn"); if(!el) return;
+  if(storeOk||syncOn){ el.classList.add("hide"); el.innerHTML=""; return; }
+  el.classList.remove("hide");
+  el.innerHTML='<b>このブラウザは、このページに保存を許していません。</b>閉じると原稿も朱も消えます。'+
+    (canSync()? '<br>claude.ai の保管庫に置けば、閉じても残り、iPhone と PC で揃います。<br><button id="warn-sync">保管庫に置いて残す</button>'
+              : '<br>設定の「持ち出す」で一枚のファイルにして残してください。ブラウザの設定で、このサイトのデータを許すと直ります。');
+  const b=$("warn-sync"); if(b) b.onclick=()=>$("c-sync").onclick();
+}
 function renderHome(){
+  renderWarn();
   const list=$("worklist");
   if(!index.length){
     list.innerHTML='<div class="empty"><b>まだ原稿がありません</b>Wordの本文を入れると、読める大きさに区切ります。<br>ひと区切り読み終えるたび、面付けのマスが朱で埋まります。</div>';
@@ -1216,8 +1240,11 @@ function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rule
   index=jget(K_INDEX)||[]; daily=jget(K_DAILY)||{};
   loadDir(); loadMemory(); warmHost();
   if(conf.sync&&canSync()) hostDbWarm().then(db=>{ if(db) startSync(db); else { syncState="error"; renderSyncStat(); } });
+  else if(!storeOk&&canSync()) resumeFromStore();
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
+  /* 自分の置き場（GitHub Pages など）から https で開いているときだけ、圏外でも開くように控え係を置く。claude.ai の枠の中では置かない */
+  try{ if("serviceWorker" in navigator && location.protocol==="https:" && window.top===window) navigator.serviceWorker.register("./shuire-sw.js").catch(()=>{}); }catch(e){}
 })();
 
 /* ============================================================
@@ -1997,9 +2024,8 @@ function harvestText(){
    settings/conf, settings/daily, memory/<k>, works/<id>, works/<id>/blocks/<i>, works/<id>/log/<k>
    どの書類にも at（いつ書いたか）を付け、新しいほうが勝つ。直しの履歴と持ち越しは足し合わせる。
    ============================================================ */
-let syncDb=null, syncOn=false, syncMute=false, syncUnsubs=[], pushed={}, pushedAt={}, pushedNb={}, pushedRev={}, syncAt=0, syncState="off", syncT=null, syncQueue={};
 const SYNC_CHUNK=400;
-const canSync=()=>!!(window.claude&&typeof window.claude.use==="function");
+function canSync(){ return !!(window.claude&&typeof window.claude.use==="function"); }
 function hostDbWarm(){ try{ if(canSync()) return window.claude.use("db").catch(()=>null); }catch(e){} return Promise.resolve(null); }
 const strip=o=>{ const c=Object.assign({},o); delete c.at; delete c.rev; return JSON.stringify(c); };
 function bodyOfBlock(b){ return {t:b.t,done:!!b.done,note:b.note||"",marks:b.marks||[],fusen:b.fusen||[],edits:b.edits||{},advice:b.advice||{},fmemo:b.fmemo||{},ftags:b.ftags||{},wide:b.wide||{on:false,memo:"",tags:[]},head:!!b.head}; }
@@ -2141,10 +2167,18 @@ async function startSync(db){
     syncState="ok"; syncAt=Date.now();
   }catch(e){ syncState="error"; }
   if(cur){ buildMine(); penCache=readWork(cur,kindOf(cur.kind).cats); }
-  refreshViews();
+  refreshViews(); renderWarn();
   return syncState==="ok";
 }
-function stopSync(){ syncUnsubs.forEach(u=>{ try{ u(); }catch(e){} }); syncUnsubs=[]; syncOn=false; syncDb=null; syncState="off"; renderSyncStat(); }
+/* 保存を許されていないブラウザで開いたとき：保管庫にもう原稿があれば（＝前に人が置くと決めている）そのまま揃える。なければ尋ねる */
+async function resumeFromStore(){
+  const db=await hostDbWarm(); if(!db) return;
+  let has=false; try{ const s=await db.collection("works").limit(1).get(); has=s.docs.length>0; }catch(e){}
+  if(has){ conf.sync=true; await startSync(db); toast("保管庫から揃えました"); return; }
+  const ok=await ask("このブラウザは、このページに保存を許していません。閉じると原稿も朱も消えます。claude.ai の保管庫——あなたのアカウントだけに見える置き場——に置けば、閉じても残り、iPhone と PC で揃います。このページは誰にも共有しないでください。",{ok:"保管庫に置く",no:"開いている間だけ"});
+  if(ok){ conf.sync=true; await startSync(db); renderWarn(); }
+}
+function stopSync(){ syncUnsubs.forEach(u=>{ try{ u(); }catch(e){} }); syncUnsubs=[]; syncOn=false; syncDb=null; syncState="off"; renderSyncStat(); renderWarn(); }
 function renderSyncStat(){
   const el=$("c-syncstat"); if(!el) return;
   el.textContent = !canSync()? "ファイルを直接開いているときは使えません。公開したページで開いたときに点けられます。"
@@ -2471,6 +2505,7 @@ $("ab-body").innerHTML=
  '<p class="cat-h">通し</p><p class="lead">一度に全部を見ようとすると終わりません。通しごとに見るところを一つに決めます。誤字の通しでは文体の鉛筆は出ません。マスが埋まったら次の通しへ。</p>'+
  '<p class="cat-h">相談</p><p class="lead">付箋は「相談したい場所」でもあります。作品の画面の<em>付箋をClaudeに相談する</em>から相談票を写して、Claudeに貼ってください。付箋の行が前後二文といっしょに <em>[F1]</em> の番号付きで並びます。相談の画面で作品の世界を選んでおくと、票の頭に「先に開いてほしいスキル」（文体の正本、その作品の設定の正本、R18の様式）が並ぶので、Claudeは記憶ではなく正本を見て答えます。返ってきた文をまるごと貼り戻せば、番号どおりに案が付きます。案は行を開くと出てきて、押せばそのまま直しの欄に入ります。写して運ぶだけなので、この道具自身はどこにも通信しません。</p>'+
  '<p class="cat-h">直し</p><p class="lead">行を押すとその場で直せます。もとの本文は残るので、控えに「もとの文 → 直した文」が並びます。書き出せば、直したあとの本文がそのまま入稿用のテキストになります。</p>'+
+ '<p class="cat-h">この一枚を手元に置く</p><p class="lead">この道具は一枚の HTML です。パソコンでは、ファイルとして手元に置いてブラウザで開くのがいちばん確実で、原稿はそのブラウザの中に残ります。置き場は GitHub の manamiokuma/manamiokuma（shuire.html）。<span id="ab-selfwrap" class="hide">いま開いているこのページからも取り出せます。<br><button class="go quiet" id="ab-self" style="margin-top:8px">この一枚をファイルとして保存（shuire.html）</button></span></p>'+
  '<p class="cat-h">預かりかた</p><p class="lead">本文はこの端末の中だけに置かれます。どこにも送りません。ブラウザの履歴やサイトデータを消すと一緒に消えるので、設定の<em>Wordへの控え</em>を切らないでおいてください。作品まるごとが一つのWordに控えられるので、この端末から消えても失われません。パソコンなら控えの置き場（フォルダ）を決めておくと、ダウンロードが増えず、同じ一つのファイルに上書きされます。次に開いたときも覚えています。</p>';
 
 /* ============================================================
@@ -2507,6 +2542,14 @@ $("o-back").onclick=()=>{ renderWork(); view("work"); };
 $("p-back").onclick=()=>{ renderWork(); view("work"); };
 $("c-back").onclick=()=>{ if(cur){ renderWork(); view("work"); } else { renderHome(); view("home"); } };
 $("ab-back").onclick=()=>{ renderHome(); view("home"); };
+/* 公開用の一枚には、もとの shuire.html を圧縮して埋めてある（build-artifact.mjs）。それをほどいて渡す */
+function selfSource(){
+  const el=$("self-src"); const b64=el&&el.textContent&&el.textContent.trim(); if(!b64) return null;
+  const bin=atob(b64), u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+  return new TextDecoder().decode(inflateRaw(u8));
+}
+(function(){ const el=document.getElementById("self-src"); if(el&&el.textContent.trim()) $("ab-selfwrap").classList.remove("hide"); })();
+$("ab-self").onclick=async()=>{ try{ const t=selfSource(); if(!t){ toast("この版には埋まっていません"); return; } await save(new TextEncoder().encode(t),"shuire.html","text/html"); }catch(e){ toast("取り出せませんでした"); } };
 $("btn-conf").onclick=renderConf;
 $("c-dir").onclick=pickDir;
 let memA=null, memB=null;
@@ -2598,11 +2641,10 @@ $("a-save").onclick=()=>{
   index.unshift({id:id,title:title,done:0,total:blocks.length,pass:1,kind:"typo"});
   conf.last=id; jset(K_CONF,conf);
   jset(K_INDEX,index);
-  if(jset("shuire:work:"+id,cur)){
-    yure=buildYure(cur); penCache=readWork(cur,kindOf(cur.kind).cats);
-    renderWork(); view("work");
-    toast(blocks.length+"区切りに分けました"+(penTotal()? "　鉛筆"+penTotal()+"行" : ""));
-  }
+  jset("shuire:work:"+id,cur);                 /* 保存できなくても続ける（開いている間は記憶にある。保管庫か持ち出しで残せる） */
+  yure=buildYure(cur); penCache=readWork(cur,kindOf(cur.kind).cats);
+  renderWork(); view("work");
+  toast(blocks.length+"区切りに分けました"+(penTotal()? "　鉛筆"+penTotal()+"行" : ""));
 };
 
 $("btn-go").onclick=()=>{ const f=firstUndone(); openBlock(f<0?0:f); };

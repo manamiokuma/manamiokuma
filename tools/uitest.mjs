@@ -738,6 +738,14 @@ await step("同じものを持ち込むと「そのまま」、ほかの端末�
   must((await p.textContent("#worklist")).includes("ほかの端末の原稿"), "持ち込んだ原稿が一覧に出ない");
   await p.locator("#worklist .work", { hasText: "人形の部屋" }).first().click();
 });
+await step("この道具についての「ファイルとして保存」は、ファイルで開いた版では出ない", async () => {
+  await p.click("#btn-back");
+  await p.click("#btn-about");
+  must(!(await p.locator("#ab-selfwrap").isVisible()), "埋まっていないのに取り出す札が出ている");
+  must((await p.textContent("#ab-body")).includes("手元に置く"), "手元に置く節がない");
+  await p.click("#ab-back");
+  await p.locator("#worklist .work", { hasText: "人形の部屋" }).first().click();
+});
 await step("画面の絵を撮る", async () => {
   await p.screenshot({ path: "tools/tmp-work.png" });
   await p.click("#btn-go");

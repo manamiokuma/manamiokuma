@@ -17,7 +17,8 @@ const mkEl = () => ({
   addEventListener(){}, focus(){}, setSelectionRange(){}, getBoundingClientRect(){ return { top: 0 }; },
   appendChild(){}, remove(){}, click(){}
 });
-function makeCtx(){
+function makeCtx(opt){
+  opt = opt || {};
   const els = new Map();
   const store = new Map();
   const c = {
@@ -29,17 +30,20 @@ function makeCtx(){
       body: mkEl(),
       addEventListener(){}
     },
-    localStorage: {
+    localStorage: opt.noStore ? {
+      getItem(){ throw new Error("SecurityError"); }, setItem(){ throw new Error("SecurityError"); }, removeItem(){ throw new Error("SecurityError"); }
+    } : {
       getItem: k => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, v),
       removeItem: k => store.delete(k)
-    }
+    },
+    atob: s => Buffer.from(s, "base64").toString("latin1")
   };
   c.window = c; c.globalThis = c;
   c.window.scrollTo = () => {}; c.window.scrollY = 0; c.window.addEventListener = () => {};
   vm.createContext(c);
   vm.runInContext(src, c, { filename: "shuire.html" });
-  c.__store = store;
+  c.__store = store; c.__els = els;
   return c;
 }
 const ctx = makeCtx();
@@ -706,6 +710,41 @@ await run("持ち出しファイルは、新しいほうだけ取り込む", () 
   truthy(threw, "違うファイルを黙って受け入れた");
 });
 evA("stopSync()");
+const 庫2 = 庫;
+
+console.log("\n保存を許されていないブラウザ");
+await run("保存できなくても、原稿は入って読める（開いている間は記憶にある）", () => {
+  const N = makeCtx({ noStore: true });
+  const evN = e => vm.runInContext(e, N);
+  eq(evN("storeOk"), false, "保存できないと分かっていない");
+  N.document.getElementById("a-title").value = "試し"; N.document.getElementById("a-body").value = "　雨が降っていた。窓の外は白く煙って、遠くの塔の輪郭さえ溶けている。彼は何も言わなかった。朝が来た。光が来た。"; N.document.getElementById("a-block").value = "2200";
+  evN('document.getElementById("a-save").onclick()');
+  truthy(evN("cur && cur.title==='試し'"), "原稿が立ち上がらない");
+  eq(evN("index.length"), 1, "一覧に載らない");
+  eq(evN('jget("shuire:work:"+curId).title'), "試し", "記憶から読み戻せない");
+  evN("renderHome()");
+  truthy(N.document.getElementById("home-warn").innerHTML.includes("保存を許していません"), "断りが出ない");
+  truthy(N.document.getElementById("home-warn").innerHTML.includes("持ち出す"), "枠の外では、持ち出しを勧めるはず");
+});
+await run("保存できないうえに保管庫がある枠の中なら、保管庫を勧める／既に原稿があれば黙って揃える", async () => {
+  const N = makeCtx({ noStore: true });
+  const evN = e => vm.runInContext(e, N);
+  N.claude = { use: async name => name === "db" ? 庫2 : null };
+  evN("renderHome()");
+  truthy(N.document.getElementById("home-warn").innerHTML.includes("warn-sync"), "保管庫のボタンが出ない");
+  await evN("resumeFromStore()");
+  truthy(evN("syncOn"), "保管庫の原稿があるのに揃えない");
+  eq(evN("index.length"), 1, "保管庫の原稿が降りてこない");
+  eq(evN("index[0].title"), "別");
+});
+await run("公開用の一枚から、もとの shuire.html を取り出せる", async () => {
+  const zlib = await import("node:zlib");
+  const html = fs.readFileSync(new URL("../shuire.html", import.meta.url), "utf8");
+  ctx.__els.get("self-src").textContent = zlib.deflateRawSync(Buffer.from(html, "utf8"), { level: 9 }).toString("base64");
+  eq(ev("selfSource()"), html, "取り出した一枚が違う");
+  ctx.__els.get("self-src").textContent = "";
+  eq(ev("selfSource()"), null, "埋まっていない版で null にならない");
+});
 
 console.log("\nWordの読み書き");
 await run("ブラウザの助けなしでも deflate をほどける（iPhone の古い Safari の控え）", async () => {
