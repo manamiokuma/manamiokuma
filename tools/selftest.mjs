@@ -7,7 +7,7 @@ import vm from "node:vm";
 import path from "node:path";
 
 const html = fs.readFileSync(new URL("../shuire.html", import.meta.url), "utf8");
-const src = html.slice(html.indexOf("<script>") + 8, html.lastIndexOf("</script>"));
+const src = html.slice(html.lastIndexOf("<script>") + 8, html.lastIndexOf("</script>"));   /* 最後の <script> が本体（前に起動の見張りがある） */
 
 /* ---- 偽のDOM（端末ひとつぶん） ---- */
 const mkEl = () => ({

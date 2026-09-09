@@ -286,6 +286,7 @@
 </head>
 <body>
 <div class="wrap">
+  <div class="warn hide" id="boot-err"></div>
 
   <!-- 一覧 -->
   <section id="v-home">
@@ -298,6 +299,7 @@
     <div class="stat" id="home-stat"></div>
     <div class="foot">
       <button id="btn-conf">設定</button>
+      <span id="ver" style="font-size:11px;color:#9aabb8;align-self:center"></span>
       <button id="btn-about">この道具について</button>
     </div>
   </section>
@@ -486,7 +488,18 @@
 <div class="veil hide" id="veil"><div class="card" id="card"></div></div>
 <div class="toast" id="toast"></div>
 <script>
+/* 起動でつまずいたとき、黙って止まらず画面に理由を出す（どの端末でも同じ文が見えるように） */
+(function(){
+  var shown=false;
+  function show(m){ if(shown) return; shown=true; try{ var el=document.getElementById("boot-err"); if(!el) return; el.className="warn";
+    el.innerHTML="<b>起動でつまずきました。</b>この文をそのまま Claude に伝えてください。<br><code style=\"font-size:11.5px;word-break:break-all\"></code>"; el.querySelector("code").textContent=m; }catch(e){} }
+  window.addEventListener("error",function(e){ show((e&&e.message||"error")+"　行 "+(e&&e.lineno||"?")+"　"+(navigator.userAgent||"")); });
+  window.addEventListener("unhandledrejection",function(e){ var r=e&&e.reason; show("promise: "+(r&&(r.message||r.code||String(r))||"?")+"　"+(navigator.userAgent||"")); });
+})();
+</script>
+<script>
 "use strict";
+const VER="2026-09-09d";
 /* ============================================================
    朱入れ — 単一ファイル・依存なし・通信なし
    人が入れるのが「朱」、機械が引くのが「鉛筆」。
@@ -1296,6 +1309,7 @@ function defaultConf(){ const r={}; RULES.forEach(x=>r[x.id]=true); return {rule
   else if(!storeOk&&canSync()) resumeFromStore();
   index.forEach(w=>{ w.kind=w.kind||"typo"; w.pass=w.pass||1; });
   renderHome(); view("home");
+  const vv=$("ver"); if(vv) vv.textContent="版 "+VER;
   /* 自分の置き場（GitHub Pages など）から https で開いているときだけ、圏外でも開くように控え係を置く。claude.ai の枠の中では置かない */
   try{ if("serviceWorker" in navigator && location.protocol==="https:" && window.top===window) navigator.serviceWorker.register("./shuire-sw.js").catch(()=>{}); }catch(e){}
 })();
