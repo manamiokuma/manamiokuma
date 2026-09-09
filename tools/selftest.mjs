@@ -39,6 +39,7 @@ function makeCtx(opt){
     },
     atob: s => Buffer.from(s, "base64").toString("latin1")
   };
+  if (opt.claude) c.claude = { use: name => Promise.resolve(null) };   /* claude.ai の枠の中（window.claude がある）を真似る */
   c.window = c; c.globalThis = c;
   c.window.scrollTo = () => {}; c.window.scrollY = 0; c.window.addEventListener = () => {};
   vm.createContext(c);
@@ -723,6 +724,21 @@ await run("持ち出しファイルは、新しいほうだけ取り込む", () 
 });
 evA("stopSync()");
 const 庫2 = 庫;
+
+console.log("\nclaude.ai の枠の中で起動する");
+await run("window.claude があっても起動が通り、ボタンがつながる（hostDl の TDZ を再発させない）", () => {
+  const C = makeCtx({ claude: true });
+  const evC = e => vm.runInContext(e, C);
+  eq(evC('typeof document.getElementById("btn-add").onclick'), "function", "原稿を入れるボタンがつながっていない");
+  eq(evC('typeof document.getElementById("a-save").onclick'), "function", "区切って始めるがつながっていない");
+  eq(evC('typeof document.getElementById("c-sync").onclick'), "function", "揃える切り替えがつながっていない");
+  truthy(evC("canSync()"), "枠の中と分かっていない");
+});
+await run("保存も許されず、window.claude もある枠の中でも起動が通る", () => {
+  const C = makeCtx({ claude: true, noStore: true });
+  const evC = e => vm.runInContext(e, C);
+  eq(evC('typeof document.getElementById("btn-add").onclick'), "function", "つながっていない");
+});
 
 console.log("\n保存を許されていないブラウザ");
 await run("保存できなくても、原稿は入って読める（開いている間は記憶にある）", () => {

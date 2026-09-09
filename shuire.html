@@ -499,7 +499,7 @@
 </script>
 <script>
 "use strict";
-const VER="2026-09-09d";
+const VER="2026-09-09e";
 /* ============================================================
    朱入れ — 単一ファイル・依存なし・通信なし
    人が入れるのが「朱」、機械が引くのが「鉛筆」。
@@ -507,6 +507,7 @@ const VER="2026-09-09d";
 
 const K_INDEX="shuire:index", K_DAILY="shuire:daily", K_CONF="shuire:conf", K_MEMORY="shuire:memory";
 let memory=[];                                   /* 過去の直しの持ち越し [{o,n,w,at}] */
+let hostDl=null, outDir=null;                    /* 枠の主の保存係と、控えの置き場。起動時に触るのでここで宣言（あとで宣言すると TDZ で起動ごと死ぬ） */
 let syncDb=null, syncOn=false, syncMute=false, syncUnsubs=[], pushed={}, pushedAt={}, pushedNb={}, pushedRev={}, syncAt=0, syncState="off", syncT=null, syncQueue={};   /* 揃える係の状態（起動時の描画からも読むので、ここで宣言） */
 const $=id=>document.getElementById(id);
 const mem={};
@@ -1446,7 +1447,6 @@ function buildDocx(paras){
 }
 /* claude.ai の枠の中では a.download が効かないので、枠の主（downloads）に保存を頼む。
    それ以外（ファイルを直接開いたとき）はいつものダウンロード */
-let hostDl=null;
 function warmHost(){
   try{ if(window.claude&&typeof window.claude.use==="function") hostDl=window.claude.use("downloads").catch(()=>null); }catch(e){ hostDl=null; }
 }
@@ -1468,7 +1468,6 @@ async function save(bytes,name,mime,quiet){
 }
 /* 控えの置き場。フォルダを一度決めておけば、同じ一つのファイルに上書きしていく。
    フォルダの取っ手はこの端末の中（IndexedDB）に覚えておく */
-let outDir=null;
 const canDir=()=>typeof window.showDirectoryPicker==="function";
 function idb(){
   return new Promise((ok,ng)=>{
